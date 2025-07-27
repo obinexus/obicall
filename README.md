@@ -1,17 +1,15 @@
-# Polygon - OBINexus Polymorphic AI Call Library
+# Obicall - OBINexus Polymorphic AI Call Library
 
 **Zero Trust Modular AI System Broker for Safety-Critical Applications**
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/obinexus/polygon/actions)
-[![OBINexus Compliance](https://img.shields.io/badge/OBINexus-Hypothesis_III-green.svg)](https://github.com/obinexus/obiai)
-[![Zero Trust](https://img.shields.io/badge/security-zero_trust-red.svg)](https://www.nist.gov/publications/zero-trust-architecture)
+   
 
 ## Overview
 
-Polygon is the polymorphic call broker and meta-API orchestration layer for modular AI systems within the OBINexus Computing framework. Built on the foundation of our proven Bayesian debiasing architecture and OBI Buffer protocol, Polygon enables dynamic loading, validation, and orchestration of AI components while maintaining strict Zero Trust security principles and audit compliance.
+Obicall is the polymorphic call broker and meta-API orchestration layer for modular AI systems within the OBINexus Computing framework. Built on the foundation of our proven Bayesian debiasing architecture and OBI Buffer protocol, Obicall enables dynamic loading, validation, and orchestration of AI components while maintaining strict Zero Trust security principles and audit compliance.
 
 **Key Features:**
+
 - **Dynamic Module Loading**: Runtime loading/unloading of AI components without system restart
 - **Schema-Enforced Interfaces**: All module calls validated through structured API contracts
 - **Zero Trust Architecture**: Mandatory validation at all module boundaries with no bypass mechanisms
@@ -21,13 +19,13 @@ Polygon is the polymorphic call broker and meta-API orchestration layer for modu
 
 ## Architecture
 
-Polygon implements the modular AI system architecture defined in **OBINexus Hypothesis III**:
+Obicall implements the modular AI system architecture defined in **OBINexus Hypothesis III**:
 
 ```
 ┌─────────────────────────────────────────────────┐
 │               AI Application Layer               │
 ├─────────────────────────────────────────────────┤
-│            Polygon Call Broker                  │
+│            Obicall Call Broker                  │
 │  ┌─────────────┬─────────────┬─────────────┐    │
 │  │   Schema    │   Module    │  Audit      │    │
 │  │ Validation  │  Registry   │  Trail      │    │
@@ -43,7 +41,7 @@ Polygon implements the modular AI system architecture defined in **OBINexus Hypo
 
 ### Core Components
 
-- **PolygonBroker**: Central orchestration engine managing module lifecycle and call routing
+- **ObicallBroker**: Central orchestration engine managing module lifecycle and call routing
 - **Module Registry**: Dynamic discovery and registration system for AI components
 - **Schema Engine**: Contract validation ensuring type safety and security compliance
 - **Audit System**: Comprehensive logging of all module interactions for bias analysis
@@ -51,14 +49,14 @@ Polygon implements the modular AI system architecture defined in **OBINexus Hypo
 
 ## Integration with OBINexus Framework
 
-Polygon serves as the critical middleware layer connecting the established OBINexus components:
+Obicall serves as the critical middleware layer connecting the established OBINexus components:
 
-| Component | Integration Point | Purpose |
-|-----------|------------------|---------|
-| **OBI Buffer** | Transport Layer | Zero-overhead message validation and marshalling |
-| **OBIAI Framework** | Bias Analysis | Structured data flow enabling bias detection algorithms |
-| **Aegis Proofs** | Mathematical Foundation | Cost function integration for module selection |
-| **CSL Layer** | Visualization | Cultural symbolic representation of inference states |
+| Component           | Integration Point       | Purpose                                                 |
+| ------------------- | ----------------------- | ------------------------------------------------------- |
+| **OBI Buffer**      | Transport Layer         | Zero-overhead message validation and marshalling        |
+| **OBIAI Framework** | Bias Analysis           | Structured data flow enabling bias detection algorithms |
+| **Aegis Proofs**    | Mathematical Foundation | Cost function integration for module selection          |
+| **CSL Layer**       | Visualization           | Cultural symbolic representation of inference states    |
 
 ## Quick Start
 
@@ -73,8 +71,8 @@ Polygon serves as the critical middleware layer connecting the established OBINe
 
 ```bash
 # Clone the repository
-git clone https://github.com/obinexus/polygon.git
-cd polygon
+git clone https://github.com/obinexus/obicall.git
+cd obicall
 
 # Build core library
 mkdir build && cd build
@@ -85,26 +83,26 @@ make -j$(nproc)
 sudo make install
 
 # Verify installation
-polygon-cli --version
+obicall-cli --version
 ```
 
 ### Basic Usage
 
 ```c
-#include <polygon/polygon.h>
+#include <obicall/obicall.h>
 
 // Initialize broker with Zero Trust enforcement
-PolygonBroker* broker = polygon_broker_create(POLYGON_ZERO_TRUST);
+ObicallBroker* broker = obicall_broker_create(OBICALL_ZERO_TRUST);
 
 // Register AI module with schema validation
-PolygonModule* voice_module = polygon_register_module(
-    broker, 
+ObicallModule* voice_module = obicall_register_module(
+    broker,
     "voice_interface",
     "/path/to/voice_schema.yaml"
 );
 
-// Execute validated call through Polygon interface
-PolygonResult result = polygon_call(
+// Execute validated call through Obicall interface
+ObicallResult result = obicall_call(
     voice_module,
     "transcribe_audio",
     &audio_data,
@@ -112,20 +110,20 @@ PolygonResult result = polygon_call(
 );
 
 // All calls automatically audited and bias-checked
-if (result.status == POLYGON_SUCCESS) {
+if (result.status == OBICALL_SUCCESS) {
     printf("Transcription: %s\n", transcription_output.text);
     printf("Confidence: %.2f\n", result.confidence);
     printf("Bias Score: %.3f\n", result.bias_metrics.demographic_parity);
 }
 
-polygon_broker_destroy(broker);
+obicall_broker_destroy(broker);
 ```
 
 ## Module Development
 
 ### Schema Definition
 
-All Polygon modules must define their interface through YAML schemas:
+All Obicall modules must define their interface through YAML schemas:
 
 ```yaml
 # voice_interface_schema.yaml
@@ -146,10 +144,10 @@ functions:
         type: "text/plain"
         encoding: "utf-8"
         bias_check: true
-    
+
   text_to_speech:
     input:
-      text: 
+      text:
         type: "string"
         max_length: 1000
         sanitization: "text_normalizer"
@@ -168,32 +166,32 @@ security:
 
 ```c
 // voice_module.c
-#include <polygon/module.h>
+#include <obicall/module.h>
 
 // Module initialization with schema registration
-POLYGON_MODULE_INIT(voice_interface) {
-    return polygon_module_register_schema(
+OBICALL_MODULE_INIT(voice_interface) {
+    return obicall_module_register_schema(
         module,
         "voice_interface_schema.yaml"
     );
 }
 
 // Implement schema-validated function
-POLYGON_FUNCTION(transcribe_audio) {
-    // Input automatically validated by Polygon
-    AudioData* input = (AudioData*)polygon_get_input(call, "audio_data");
-    
+OBICALL_FUNCTION(transcribe_audio) {
+    // Input automatically validated by Obicall
+    AudioData* input = (AudioData*)obicall_get_input(call, "audio_data");
+
     // Your transcription logic here
     char* transcription = perform_transcription(input);
-    
+
     // Output automatically validated and bias-checked
-    return polygon_return_string(call, "transcription", transcription);
+    return obicall_return_string(call, "transcription", transcription);
 }
 
 // Export function table
-POLYGON_EXPORT_FUNCTIONS {
-    POLYGON_BIND_FUNCTION("transcribe_audio", transcribe_audio),
-    POLYGON_FUNCTIONS_END
+OBICALL_EXPORT_FUNCTIONS {
+    OBICALL_BIND_FUNCTION("transcribe_audio", transcribe_audio),
+    OBICALL_FUNCTIONS_END
 };
 ```
 
@@ -201,27 +199,27 @@ POLYGON_EXPORT_FUNCTIONS {
 
 ### Zero Trust Architecture
 
-Polygon enforces Zero Trust principles at every level:
+Obicall enforces Zero Trust principles at every level:
 
-- **No Bypass Mechanisms**: All module communication must pass through validated Polygon interfaces
+- **No Bypass Mechanisms**: All module communication must pass through validated Obicall interfaces
 - **Schema Validation**: Every input/output validated against registered contracts
 - **Cryptographic Audit**: All calls signed and verifiable through OBI Buffer integration
 - **Principle of Least Privilege**: Modules can only access explicitly granted capabilities
 
 ### Bias Mitigation Integration
 
-Polygon automatically integrates with the OBINexus bias detection framework:
+Obicall automatically integrates with the OBINexus bias detection framework:
 
 ```c
 // Bias monitoring configuration
-PolygonBiasConfig bias_config = {
+ObicallBiasConfig bias_config = {
     .demographic_parity_threshold = 0.05,
     .equalized_odds_threshold = 0.03,
-    .audit_frequency = POLYGON_AUDIT_EVERY_CALL,
+    .audit_frequency = OBICALL_AUDIT_EVERY_CALL,
     .bayesian_debiasing = true
 };
 
-polygon_configure_bias_monitoring(broker, &bias_config);
+obicall_configure_bias_monitoring(broker, &bias_config);
 ```
 
 ### Compliance Frameworks
@@ -233,13 +231,13 @@ polygon_configure_bias_monitoring(broker, &bias_config);
 
 ## Performance Characteristics
 
-| Metric | Performance | Notes |
-|--------|-------------|-------|
-| **Call Overhead** | O(1) per invocation | Independent of payload size |
-| **Schema Validation** | <100μs | Cached compilation |
-| **Module Loading** | <50ms | Dynamic library resolution |
-| **Memory Footprint** | <2MB | Core broker + registry |
-| **Audit Logging** | <10μs | Async to OBI Buffer |
+| Metric                | Performance         | Notes                       |
+| --------------------- | ------------------- | --------------------------- |
+| **Call Overhead**     | O(1) per invocation | Independent of payload size |
+| **Schema Validation** | <100μs              | Cached compilation          |
+| **Module Loading**    | <50ms               | Dynamic library resolution  |
+| **Memory Footprint**  | <2MB                | Core broker + registry      |
+| **Audit Logging**     | <10μs               | Async to OBI Buffer         |
 
 ## Development Roadmap
 
@@ -263,10 +261,10 @@ polygon_configure_bias_monitoring(broker, &bias_config);
 
 ```python
 # Python adapter example
-from polygon import PolygonAdapter
+from obicall import ObicallAdapter
 
 # Initialize with same Zero Trust guarantees
-adapter = PolygonAdapter(zero_trust=True)
+adapter = ObicallAdapter(zero_trust=True)
 
 # Load voice module
 voice = adapter.load_module('voice_interface')
@@ -285,9 +283,9 @@ print(f"Bias Score: {result.bias_metrics}")
 
 ```javascript
 // JavaScript adapter example
-const { PolygonBroker } = require('@obinexus/polygon');
+const { ObicallBroker } = require('@obinexus/obicall');
 
-const broker = new PolygonBroker({ zeroTrust: true });
+const broker = new ObicallBroker({ zeroTrust: true });
 const vision = await broker.loadModule('vision_processing');
 
 const analysis = await vision.analyzeImage({
@@ -301,7 +299,7 @@ console.log('Bias Report:', analysis.bias_metrics);
 
 ## Contributing
 
-Polygon follows the OBINexus waterfall methodology with systematic verification gates:
+Obicall follows the OBINexus waterfall methodology with systematic verification gates:
 
 1. **Research Gate**: Mathematical foundation and security analysis
 2. **Implementation Gate**: Component development with formal verification
@@ -324,23 +322,22 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Citation
 
 ```bibtex
-@software{polygon2025,
-  title={Polygon: Zero Trust Polymorphic AI Call Library},
-  author={Okpala, Nnamdi Michael and OBINexus Team},
+@software{obicall2025,
+  title={Obicall: Zero Trust Polymorphic AI Call Library},
+  author={OBINexus Team},
   year={2025},
-  url={https://github.com/obinexus/polygon},
+  url={https://github.com/obinexus/obicall},
   note={Part of the OBINexus Computing Aegis Framework}
 }
 ```
 
 ## Project Team
 
-**Lead Architect**: Nnamdi Michael Okpala  
-**Organization**: OBINexus Computing - Protocol Engine Division  
-📧 nnamdi@obinexus.com  
-🐙 [@okpalan](https://github.com/okpalan)
+**Lead Architect**: OBINexus Protocol Team\
+**Organization**: OBINexus Computing - Protocol Engine Division\
+📧 [support@obinexus.org](mailto\:support@obinexus.org)
 
-**Technical Collaboration**: Claude AI (Systems Architecture)  
+**Technical Collaboration**: Claude AI (Systems Architecture)\
 **Integration Team**: OBINexus Computing Engineering Division
 
 ## Related Projects
@@ -351,5 +348,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**OBINexus Computing - Building Mathematically Verified AI Systems**  
+**OBINexus Computing - Building Mathematically Verified AI Systems**\
 *"Transforming AI from pattern matching to principled reasoning - one verified call at a time."*
+
