@@ -16,6 +16,38 @@ the CMake build itself is UCRT64-specific.
 Conan packaging and Debian/APT packaging (`cpack -G DEB`) are explicitly
 out of scope for this release.
 
+## CI status
+
+`.github/workflows/windows-ucrt64.yml` has a `package` job that runs the
+same `makepkg-mingw --syncdeps --cleanbuild`, `pacman -U`, and
+installed-package smoke test described below, on a clean `windows-latest`
+GitHub Actions runner.
+
+- [Run #8](https://github.com/obinexus/obicall/actions/runs/34877309454)
+  (commit `eed0f9c`) - **failed**: `ERROR: PKGBUILD contains CRLF
+  characters and cannot be sourced.` The PKGBUILD blob committed to the
+  repo was LF-only; GitHub's `windows-latest` runners default to git
+  `core.autocrlf=true`, which rewrote it to CRLF on checkout, and
+  `makepkg` refuses to source a CRLF script. Fixed by commit `6ecbb1f`
+  (`.gitattributes`, `text eol=lf` pinned for `packaging/msys2/**/PKGBUILD`
+  and `*.sh`).
+- [Run #9](https://github.com/obinexus/obicall/actions/runs/34881442150)
+  (commit `6ecbb1f`) - **passed**, both jobs: `build-and-test` (plain
+  CMake build/test/install smoke test) and `package` (makepkg-mingw
+  build, `pacman -U` install, and the full installed-package smoke test:
+  `--help`, `doctor`, `validate`, `replay`, `demo --scenario
+  broker-failover`, all from an isolated working directory).
+
+The `mingw-w64-ucrt-x86_64-obicall-0.1.1-1-any.pkg.tar.zst` attached to
+the [v0.1.1 release](https://github.com/obinexus/obicall/releases/tag/v0.1.1)
+predates the CRLF fix - it was built and verified locally (never through a
+fresh git checkout on a Windows runner, so it never hit the checkout-time
+CRLF rewrite that broke CI) before the fix landed, and its checksum and
+test results are recorded in the release notes. The CRLF bug was specific
+to *checking out* the PKGBUILD on a Windows runner's default git config,
+not to the package contents themselves; see the release for the actual
+tested-and-published artifact.
+
 ## Why the PKGBUILD builds from a tagged archive, not the checkout
 
 `source=()` in the PKGBUILD points at a specific tagged GitHub release
