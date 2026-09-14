@@ -1,0 +1,9 @@
+# makepkg-mingw build/package byproducts - never checked in, only PKGBUILD
+# (and .SRCINFO, if generated) are source.
+src/
+pkg/
+*.tar.gz
+*.tar.xz
+*.tar.zst
+*.pkg.tar.*
+*.log

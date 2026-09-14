@@ -1,0 +1,94 @@
+# Maintainer: Nnamdi Michael Okpala <obinexusmk2@proton.me>
+#
+# UCRT64-only for this first release - see the "Scope" note in
+# docs/RELEASING_MSYS2.md. Other mingw_arch entries (mingw64, clang64,
+# clangarm64) are believed buildable from the same sources (the project's
+# own CI also builds on Linux/macOS - see .github/workflows/) but have not
+# been built or tested as MSYS2 packages, so they are deliberately left
+# out rather than claimed.
+
+_realname=obicall
+pkgbase=mingw-w64-${_realname}
+pkgname=("${MINGW_PACKAGE_PREFIX}-${_realname}")
+pkgver=0.1.1
+pkgrel=1
+pkgdesc="OBINexus dynamic dual-FFI polyglot runtime for sensor fusion - local desktop prototype (UCRT64)"
+arch=('any')
+mingw_arch=('ucrt64')
+url="https://github.com/obinexus/obicall"
+license=('spdx:MIT')
+
+# Build-time only: the CLI/gate/journal/broker/worker binaries and the
+# core DLL are C11 with no external library dependencies beyond the UCRT64
+# toolchain's own runtime (confirmed by `objdump -p` on the Release
+# build - no libgcc_s_seh/libwinpthread import, only system DLLs and the
+# api-ms-win-crt-* Universal CRT split, both of which ship with Windows
+# 10+ itself). Python is needed at build time only to run
+# test_python_abi_roundtrip and cli_demo_broker_failover under `check()`.
+makedepends=(
+  "${MINGW_PACKAGE_PREFIX}-cc"
+  "${MINGW_PACKAGE_PREFIX}-cmake"
+  "${MINGW_PACKAGE_PREFIX}-ninja"
+  "${MINGW_PACKAGE_PREFIX}-python"
+)
+
+# Runtime: the installed CLI spawns provider_py_inertial's worker with
+# whatever `python3`/`python` it finds on PATH (or $OBICALL_PYTHON) - see
+# resolve_python_exe() in src/supervisor/supervisor.c - and
+# python/obicall/provider_worker.py itself only touches the standard
+# library plus this package's own obicall.dll via ctypes, so the UCRT64
+# Python package is the only runtime dependency beyond the OS itself.
+depends=(
+  "${MINGW_PACKAGE_PREFIX}-python"
+)
+
+# Pinned to the exact v0.1.1 release commit's published source archive
+# (see docs/RELEASING_MSYS2.md for how sha256sums was obtained: downloaded
+# from this same URL and hashed, not invented). Never point this at a
+# moving branch.
+source=("${_realname}-${pkgver}.tar.gz::https://github.com/obinexus/obicall/archive/refs/tags/v${pkgver}.tar.gz")
+# Placeholder - real checksum is computed and committed right after the
+# v0.1.1 tag is pushed (see docs/RELEASING_MSYS2.md step 3/4). Never build
+# a release against this value; makepkg will refuse it as a mismatch.
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+
+build() {
+  "${MINGW_PREFIX}"/bin/cmake.exe \
+    -S "${srcdir}/${_realname}-${pkgver}" \
+    -B "build-${MSYSTEM}" \
+    -G "Ninja" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}" \
+    -DOBICALL_ENABLE_TESTS=ON \
+    -DOBICALL_EMBED_SOURCE_DIR_FALLBACK=OFF
+
+  "${MINGW_PREFIX}"/bin/cmake.exe --build "build-${MSYSTEM}"
+}
+
+check() {
+  # cli_demo_broker_failover and test_python_abi_roundtrip need a Python
+  # interpreter on PATH; ${MINGW_PACKAGE_PREFIX}-python (makedepends
+  # above) provides mingw-w64-ucrt-x86_64 python3, which is already first
+  # on PATH inside a UCRT64 makepkg-mingw shell.
+  #
+  # OBICALL_EMBED_SOURCE_DIR_FALLBACK=OFF above means the obicall binary
+  # under test here resolves the Python worker script exactly the same
+  # way the packaged binary will: relative to its own directory, at
+  # <bin_dir>/../share/obicall/python/obicall/provider_worker.py (see
+  # supervisor.c). build-${MSYSTEM}/bin is that binary's directory here,
+  # so stage the adapter at build-${MSYSTEM}/share/obicall/python/obicall/
+  # before running ctest - this exercises the real installed-layout
+  # resolution path (not a dev-only fallback) as part of check().
+  local _staged_py="build-${MSYSTEM}/share/obicall/python/obicall"
+  mkdir -p "${_staged_py}"
+  cp "${srcdir}/${_realname}-${pkgver}"/python/obicall/*.py "${_staged_py}/"
+
+  "${MINGW_PREFIX}"/bin/ctest.exe --test-dir "build-${MSYSTEM}" --output-on-failure
+}
+
+package() {
+  DESTDIR="${pkgdir}" "${MINGW_PREFIX}"/bin/cmake.exe --install "build-${MSYSTEM}"
+
+  install -Dm644 "${srcdir}/${_realname}-${pkgver}/LICENSE" \
+    "${pkgdir}${MINGW_PREFIX}/share/licenses/${_realname}/LICENSE"
+}

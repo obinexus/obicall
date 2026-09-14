@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(obicall
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "OBINexus dynamic dual-FFI polyglot runtime for sensor fusion"
     LANGUAGES C)
 
@@ -105,6 +105,7 @@ install(FILES
     docs/FAULT_TOLERANCE.md
     docs/IMPLEMENTATION_STATUS.md
     docs/VALIDATION.md
+    docs/RELEASING_MSYS2.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/obicall)
 
 install(FILES LICENSE README.md
