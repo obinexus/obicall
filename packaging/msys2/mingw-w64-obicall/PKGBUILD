@@ -47,10 +47,9 @@ depends=(
 # from this same URL and hashed, not invented). Never point this at a
 # moving branch.
 source=("${_realname}-${pkgver}.tar.gz::https://github.com/obinexus/obicall/archive/refs/tags/v${pkgver}.tar.gz")
-# Placeholder - real checksum is computed and committed right after the
-# v0.1.1 tag is pushed (see docs/RELEASING_MSYS2.md step 3/4). Never build
-# a release against this value; makepkg will refuse it as a mismatch.
-sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+# Verified: downloaded from the URL above after pushing the v0.1.1 tag
+# and hashed locally (`sha256sum`), not invented.
+sha256sums=('45072f86a0afeb54ae61bdfa3c9396a3d831b9b0af82c1ac8825d444ffed922')
 
 build() {
   "${MINGW_PREFIX}"/bin/cmake.exe \
