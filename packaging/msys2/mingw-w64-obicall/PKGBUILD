@@ -86,7 +86,17 @@ check() {
 }
 
 package() {
-  DESTDIR="${pkgdir}" "${MINGW_PREFIX}"/bin/cmake.exe --install "build-${MSYSTEM}"
+  # Not DESTDIR: CMake's own docs note DESTDIR-prepending does not work
+  # reliably on Windows, because CMAKE_INSTALL_PREFIX here is an absolute
+  # path with a drive letter (C:/msys64/ucrt64) that cannot simply be
+  # concatenated onto pkgdir the way a POSIX "/usr" prefix can - verified
+  # directly: DESTDIR="${pkgdir}" cmake --install produced a package with
+  # every file nested under an extra, wrong "msys64/ucrt64/..." path
+  # component instead of installing straight to "${pkgdir}${MINGW_PREFIX}".
+  # Overriding --prefix at install time to the full staging path sidesteps
+  # the drive-letter concatenation entirely.
+  "${MINGW_PREFIX}"/bin/cmake.exe --install "build-${MSYSTEM}" \
+    --prefix "${pkgdir}${MINGW_PREFIX}"
 
   install -Dm644 "${srcdir}/${_realname}-${pkgver}/LICENSE" \
     "${pkgdir}${MINGW_PREFIX}/share/licenses/${_realname}/LICENSE"
