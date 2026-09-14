@@ -536,8 +536,12 @@ static int cmd_demo(int argc, char** argv) {
 
 /* --------------------------------------------------------------------- main */
 
-static void print_usage(void) {
-    fprintf(stderr,
+/* Takes the output stream explicitly rather than always writing to stderr:
+ * an explicit help request (--help/-h/help) must print this same text to
+ * stdout and exit 0, while the implicit usage shown for a missing or
+ * unrecognized command must stay on stderr with a nonzero exit. */
+static void print_usage(FILE* out) {
+    fprintf(out,
             "usage: obicall <command> [options]\n"
             "commands:\n"
             "  doctor --json\n"
@@ -545,13 +549,18 @@ static void print_usage(void) {
             "  run --config PATH [--runtime-dir DIR] [--duration-seconds N] [--json]\n"
             "  status [--runtime-dir DIR] [--json]\n"
             "  replay --input PATH [--json]\n"
-            "  demo --scenario broker-failover [--config PATH] [--json]\n");
+            "  demo --scenario broker-failover [--config PATH] [--json]\n"
+            "  help | --help | -h\n");
 }
 
 int main(int argc, char** argv) {
     osal_net_init();
-    if (argc < 2) { print_usage(); return 2; }
+    if (argc < 2) { print_usage(stderr); return 2; }
     const char* cmd = argv[1];
+    if (strcmp(cmd, "--help") == 0 || strcmp(cmd, "-h") == 0 || strcmp(cmd, "help") == 0) {
+        print_usage(stdout);
+        return 0;
+    }
     if (strcmp(cmd, "doctor") == 0) return cmd_doctor(argc, argv);
     if (strcmp(cmd, "validate") == 0) return cmd_validate(argc, argv);
     if (strcmp(cmd, "run") == 0) return cmd_run(argc, argv);
@@ -559,6 +568,6 @@ int main(int argc, char** argv) {
     if (strcmp(cmd, "replay") == 0) return cmd_replay(argc, argv);
     if (strcmp(cmd, "demo") == 0) return cmd_demo(argc, argv);
     fprintf(stderr, "obicall: unknown command '%s'\n", cmd);
-    print_usage();
+    print_usage(stderr);
     return 2;
 }

@@ -75,6 +75,19 @@ endif()
 
 # --- CLI smoke tests: exercise the documented commands end to end ----------
 
+# --help/-h/help must print usage to stdout and exit 0, and an unrecognized
+# command must print an error plus usage to stderr and exit nonzero (see
+# src/cli/main.c). Needs stdout/stderr captured separately, which
+# osal_process_spawn does not support, so this is its own small executable
+# rather than a plain add_test() invocation of obicall_cli.
+add_executable(test_cli_help integration/test_cli_help.c)
+target_compile_definitions(test_cli_help PRIVATE
+    OBICALL_TEST_CLI_PATH="$<TARGET_FILE:obicall_cli>"
+    OBICALL_TEST_RUNTIME_DIR="${OBICALL_TEST_RUNTIME_DIR}"
+)
+add_test(NAME test_cli_help COMMAND $<TARGET_FILE:test_cli_help>)
+set_tests_properties(test_cli_help PROPERTIES TIMEOUT 30)
+
 add_test(NAME cli_doctor COMMAND $<TARGET_FILE:obicall_cli> doctor --json)
 
 add_test(NAME cli_validate_example
