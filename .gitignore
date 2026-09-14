@@ -24,8 +24,10 @@ tests/fixtures/*.dll
 tests/fixtures/*.so
 tests/fixtures/*.dylib
 
+obicall-run/
 obicall-run-*/
 obicall-demo-run*/
+examples/run.token
 *.log
 
 __pycache__/

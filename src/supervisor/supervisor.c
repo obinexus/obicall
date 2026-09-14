@@ -252,11 +252,24 @@ int supervisor_start(supervisor_t* sv, const char* config_path, const char* runt
                             pr->manifest);
                     return -1;
                 }
+                /* Resolve relative to this process's own binary directory
+                 * first (the installed layout: ${prefix}/bin next to
+                 * ${prefix}/share/obicall/python/obicall/provider_worker.py
+                 * - see the `install(DIRECTORY python/obicall ...)` rule in
+                 * the top-level CMakeLists.txt), so an installed package
+                 * never depends on the machine it was built on. Only a
+                 * build tree that has not been installed (no share/obicall
+                 * next to its bin/) falls back to the absolute source
+                 * checkout path baked in at compile time, purely as a dev
+                 * convenience for running straight out of build/bin/. */
                 char script_path[900];
+                snprintf(script_path, sizeof(script_path), "%s/../share/obicall/python/obicall/provider_worker.py",
+                         bin_dir);
 #if defined(OBICALL_SOURCE_DIR)
-                snprintf(script_path, sizeof(script_path), "%s/python/obicall/provider_worker.py", OBICALL_SOURCE_DIR);
-#else
-                snprintf(script_path, sizeof(script_path), "%s/../python/obicall/provider_worker.py", bin_dir);
+                if (!file_exists_quick(script_path)) {
+                    snprintf(script_path, sizeof(script_path), "%s/python/obicall/provider_worker.py",
+                             OBICALL_SOURCE_DIR);
+                }
 #endif
                 char core_lib_path[700];
 #if defined(_WIN32)

@@ -9,7 +9,7 @@
   "capability_flags": ["inertial_sensor"],
   "capability_slot": "inertial_sensor",
   "preference_score": 1.0,
-  "artifact_path": "../../python/obicall/provider_worker.py",
+  "artifact_path": "provider_worker.py",
   "config_schema_version": 1,
   "config": {
     "sensor_id": "imu_a",

@@ -74,6 +74,42 @@ endif()
 install(FILES examples/position-fusion.json
     DESTINATION ${CMAKE_INSTALL_DATADIR}/obicall/examples)
 
+# Provider manifests referenced by examples/position-fusion.json's own
+# "manifests_dir": "providers" - without these an installed `obicall run`
+# or `obicall demo` against the installed example config fails at manifest
+# load, even though the example config file itself was installed above.
+install(FILES
+    examples/providers/provider_c_sim.manifest.json
+    examples/providers/provider_py_inertial.manifest.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/obicall/examples/providers)
+
+install(FILES recordings/demo.obr
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/obicall/recordings)
+
+# The Python language adapter (src/supervisor/supervisor.c's
+# `resolve_python_exe`/script_path logic looks for it at
+# ${prefix}/share/obicall/python/obicall/provider_worker.py, relative to
+# its own installed bin/ directory) - installed as a package directory,
+# not a loose script, since provider_worker.py imports its sibling
+# obicall.abi module.
+install(DIRECTORY python/obicall
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/obicall/python
+    FILES_MATCHING PATTERN "*.py"
+    PATTERN "__pycache__" EXCLUDE
+)
+
+install(FILES
+    docs/ABI.md
+    docs/ARCHITECTURE.md
+    docs/DGT.md
+    docs/FAULT_TOLERANCE.md
+    docs/IMPLEMENTATION_STATUS.md
+    docs/VALIDATION.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/obicall)
+
+install(FILES LICENSE README.md
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/obicall)
+
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/ObicallConfigVersion.cmake"
