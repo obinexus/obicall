@@ -1,0 +1,9 @@
+# Files that get sourced or executed as shell scripts must always check
+# out with LF line endings, on every platform - a CRLF PKGBUILD makes
+# makepkg/bash refuse to source it at all ("contains CRLF characters and
+# cannot be sourced"), which is exactly what broke the Windows CI package
+# job despite the repo's own blobs being LF-only: GitHub's windows-latest
+# runners default to git core.autocrlf=true, which rewrites LF -> CRLF on
+# checkout unless overridden here.
+packaging/msys2/**/PKGBUILD text eol=lf
+*.sh text eol=lf
