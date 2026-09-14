@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "pipeline_id": "position-fusion",
+  "manifests_dir": "providers",
+  "journal": {
+    "reorder_window": 8,
+    "max_lateness_ms": 2000,
+    "max_pending": 4096
+  },
+  "gate": {
+    "result_validity_ms": 500,
+    "suspect_timeout_ms": 300,
+    "confirm_timeout_ms": 700,
+    "max_replay_gap": 50
+  },
+  "estimator": {
+    "process_noise_position": 0.05,
+    "process_noise_velocity": 0.1,
+    "initial_position_variance": 10.0,
+    "initial_velocity_variance": 10.0,
+    "max_prediction_gap_s": 30.0
+  },
+  "dgt": {
+    "enabled": true,
+    "hysteresis_margin": 0.05
+  },
+  "sensor_ids": ["cam_position_a", "imu_a"],
+  "providers": [
+    {"manifest": "provider_c_sim.manifest.json", "worker_name": "worker_position", "instance_seed": 1001},
+    {"manifest": "provider_py_inertial.manifest.json", "worker_name": "worker_inertial", "instance_seed": 2002}
+  ]
+}

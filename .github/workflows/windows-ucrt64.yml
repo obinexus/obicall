@@ -1,0 +1,53 @@
+name: Windows UCRT64
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      # MSYS2's UCRT64 environment, not the msys/mingw32/clang64
+      # environments - mixing them produces objects that don't link (see
+      # docs/ARCHITECTURE.md "Build and toolchain notes").
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install smoke test
+        run: |
+          cmake --install build --prefix "$RUNNER_TEMP/obicall-install"
+          mkdir -p "$RUNNER_TEMP/relocated"
+          cp -r "$RUNNER_TEMP/obicall-install"/* "$RUNNER_TEMP/relocated/"
+          "$RUNNER_TEMP/relocated/bin/obicall.exe" doctor --json
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ucrt64-test-logs
+          path: build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore

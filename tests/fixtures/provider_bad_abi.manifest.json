@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "provider_bad_abi",
+  "version": "0.0.0",
+  "language": "c",
+  "abi_version_major": 1,
+  "abi_version_minor": 0,
+  "capability_flags": ["position_sensor"],
+  "artifact_path": "provider_bad_abi",
+  "config_schema_version": 1,
+  "config": {},
+  "dependencies": []
+}
