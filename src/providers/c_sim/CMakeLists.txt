@@ -28,9 +28,28 @@ install(TARGETS provider_c_sim LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/obica
 # against the installed examples/position-fusion.json would fail to find
 # the provider, exactly mirroring why the POST_BUILD copy below exists for
 # the uninstalled checkout.
-install(TARGETS provider_c_sim
-    LIBRARY DESTINATION ${CMAKE_INSTALL_DATADIR}/obicall/examples/providers
-    RUNTIME DESTINATION ${CMAKE_INSTALL_DATADIR}/obicall/examples/providers)
+#
+# Outside Windows that "copy" is a relative symlink to the lib/ install
+# above: share/ must hold only architecture-independent files (FHS; Debian
+# lintian rejects an ELF object there as arch-dependent-file-in-usr-share),
+# and the worker's dlopen() follows the link. The link is relative so it
+# stays valid under DESTDIR staging and in a relocated install.
+if(WIN32)
+    install(TARGETS provider_c_sim
+        LIBRARY DESTINATION ${CMAKE_INSTALL_DATADIR}/obicall/examples/providers
+        RUNTIME DESTINATION ${CMAKE_INSTALL_DATADIR}/obicall/examples/providers)
+else()
+    file(RELATIVE_PATH _provider_link_target
+        "${CMAKE_INSTALL_FULL_DATADIR}/obicall/examples/providers"
+        "${CMAKE_INSTALL_FULL_LIBDIR}/obicall/providers")
+    set(_provider_link_dir "\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/obicall/examples/providers")
+    install(CODE "
+        file(MAKE_DIRECTORY \"${_provider_link_dir}\")
+        message(STATUS \"Installing: ${_provider_link_dir}/$<TARGET_FILE_NAME:provider_c_sim> -> ${_provider_link_target}/$<TARGET_FILE_NAME:provider_c_sim>\")
+        file(CREATE_LINK \"${_provider_link_target}/$<TARGET_FILE_NAME:provider_c_sim>\"
+            \"${_provider_link_dir}/$<TARGET_FILE_NAME:provider_c_sim>\" SYMBOLIC)
+    ")
+endif()
 
 # The examples/ pipeline config and manifest reference a stable filename
 # under examples/providers/ so `obicall run --config examples/...` works

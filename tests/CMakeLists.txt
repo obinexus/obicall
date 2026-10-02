@@ -114,3 +114,21 @@ if(NOT OBICALL_PYTHON_EXE)
                      "and cli_demo_broker_failover will fail at its python-provider spawn step unless "
                      "OBICALL_PYTHON is set in the test environment.")
 endif()
+
+# GCC sanitizer builds on Linux (what .github/workflows/linux.yml runs): the
+# Python interpreter these two tests spawn is not ASan-instrumented, yet
+# ctypes-loads the instrumented core library, which ASan aborts on ("ASan
+# runtime does not come first in initial library list") unless its shared
+# runtime is preloaded into that process too. (Clang links the runtime
+# statically into executables by default, so this does not apply there.)
+if(OBICALL_ENABLE_SANITIZERS AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    execute_process(COMMAND ${CMAKE_C_COMPILER} -print-file-name=libasan.so
+        OUTPUT_VARIABLE _asan_runtime OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(IS_ABSOLUTE "${_asan_runtime}" AND EXISTS "${_asan_runtime}")
+        set_property(TEST test_python_abi_roundtrip cli_demo_broker_failover
+            APPEND PROPERTY ENVIRONMENT "LD_PRELOAD=${_asan_runtime}")
+    else()
+        message(WARNING "OBICALL_ENABLE_SANITIZERS: could not locate libasan.so; "
+                        "Python-provider tests will fail to load the instrumented core library")
+    endif()
+endif()

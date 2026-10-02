@@ -14,12 +14,15 @@ typedef SOCKET sock_t;
 static int would_block_err(void) { return WSAGetLastError() == WSAEWOULDBLOCK; }
 #else
 #include <sys/types.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 typedef int sock_t;
 #define SOCK_INVALID (-1)
 #define CLOSESOCK close
@@ -35,6 +38,13 @@ int osal_net_init(void) {
     WSADATA wsa;
     return WSAStartup(MAKEWORD(2, 2), &wsa) == 0 ? 0 : -1;
 #else
+    /* A send() to a peer that has died (e.g. the broker the
+     * broker-failover demo kills) must fail with EPIPE - which
+     * send_all() already reports as an ordinary send error - not
+     * raise SIGPIPE, whose default action kills this process too. On
+     * Windows that send just fails; without this, one broker's death on
+     * Linux cascades into the journal and gate being killed as well. */
+    signal(SIGPIPE, SIG_IGN);
     return 0;
 #endif
 }

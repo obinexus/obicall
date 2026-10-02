@@ -38,6 +38,12 @@ target_compile_definitions(obicall_core PRIVATE
     OBICALL_VERSION_STRING="${PROJECT_VERSION}"
 )
 
+# estimator.c/gate.c call sqrt() etc.; glibc keeps those in libm, which a
+# shared library must link itself rather than rely on every executable.
+if(UNIX)
+    target_link_libraries(obicall_core PRIVATE m)
+endif()
+
 generate_export_header(obicall_core
     BASE_NAME OBICALL
     EXPORT_MACRO_NAME OBICALL_API

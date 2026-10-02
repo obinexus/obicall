@@ -102,6 +102,22 @@ jobs:
           obicall.exe demo --scenario broker-failover \
             --config "$MINGW_PREFIX/share/obicall/examples/position-fusion.json" --json
 
+      # No fault-injection hooks in any shipped binary, and no path from
+      # this build machine anywhere in the package (see
+      # packaging/check-package-files.sh).
+      - name: Package contents check
+        working-directory: packaging/msys2/mingw-w64-obicall
+        run: |
+          mkdir -p extracted
+          tar -xf "${pkgfile}" -C extracted
+          bash ../../check-package-files.sh extracted "$(cygpath -m "$PWD")" "$PWD" "$(cygpath -w "$PWD")"
+
+      # The same installed-package smoke test the Linux packages get: also
+      # proves both the C and the Python provider connected, and that their
+      # observations reached the journal.
+      - name: Installed-package smoke test (shared script)
+        run: bash packaging/smoke-test-installed.sh "$MINGW_PREFIX"
+
       - name: Upload the built package
         uses: actions/upload-artifact@v4
         with:

@@ -11,7 +11,10 @@ _realname=obicall
 pkgbase=mingw-w64-${_realname}
 pkgname=("${MINGW_PACKAGE_PREFIX}-${_realname}")
 pkgver=0.1.1
-pkgrel=1
+# pkgrel 2: same v0.1.1 source as the released 0.1.1-1, but the packaged
+# binaries are now built without the worker's fault-injection hooks
+# (OBICALL_TEST_HOOKS=OFF); the test suite runs from a separate build.
+pkgrel=2
 pkgdesc="OBINexus dynamic dual-FFI polyglot runtime for sensor fusion - local desktop prototype (UCRT64)"
 arch=('any')
 mingw_arch=('ucrt64')
@@ -42,26 +45,42 @@ depends=(
   "${MINGW_PACKAGE_PREFIX}-python"
 )
 
-# Pinned to the exact v0.1.1 release commit's published source archive
-# (see docs/RELEASING_MSYS2.md for how sha256sums was obtained: downloaded
-# from this same URL and hashed, not invented). Never point this at a
-# moving branch.
+# Pinned to the exact release tag's published source archive (see
+# docs/RELEASING_MSYS2.md for how sha256sums was obtained: downloaded from
+# this same URL and hashed, not invented - packaging/pin-pkgbuild.sh does
+# exactly that). Never point this at a moving branch.
 source=("${_realname}-${pkgver}.tar.gz::https://github.com/obinexus/obicall/archive/refs/tags/v${pkgver}.tar.gz")
-# Verified: downloaded from the URL above after pushing the v0.1.1 tag
-# and hashed locally (`sha256sum`), not invented.
+# Verified: downloaded from the URL above after pushing the tag and hashed
+# locally (`sha256sum`), not invented.
 sha256sums=('45072f86a0afeb54ae61bdfa3c9396a3d831b9b0af82c1ac8825d444ffed922f')
 
 build() {
+  # The packaged build: no test suite and none of the worker's
+  # fault-injection hooks (OBICALL_TEST_HOOKS), which otherwise default to
+  # on whenever tests are enabled.
   "${MINGW_PREFIX}"/bin/cmake.exe \
     -S "${srcdir}/${_realname}-${pkgver}" \
     -B "build-${MSYSTEM}" \
     -G "Ninja" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}" \
-    -DOBICALL_ENABLE_TESTS=ON \
+    -DOBICALL_ENABLE_TESTS=OFF \
+    -DOBICALL_TEST_HOOKS=OFF \
     -DOBICALL_EMBED_SOURCE_DIR_FALLBACK=OFF
 
   "${MINGW_PREFIX}"/bin/cmake.exe --build "build-${MSYSTEM}"
+
+  # A separate, test-enabled build for check() only; never packaged.
+  "${MINGW_PREFIX}"/bin/cmake.exe \
+    -S "${srcdir}/${_realname}-${pkgver}" \
+    -B "build-check-${MSYSTEM}" \
+    -G "Ninja" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="${MINGW_PREFIX}" \
+    -DOBICALL_ENABLE_TESTS=ON \
+    -DOBICALL_EMBED_SOURCE_DIR_FALLBACK=OFF
+
+  "${MINGW_PREFIX}"/bin/cmake.exe --build "build-check-${MSYSTEM}"
 }
 
 check() {
@@ -74,15 +93,16 @@ check() {
   # under test here resolves the Python worker script exactly the same
   # way the packaged binary will: relative to its own directory, at
   # <bin_dir>/../share/obicall/python/obicall/provider_worker.py (see
-  # supervisor.c). build-${MSYSTEM}/bin is that binary's directory here,
-  # so stage the adapter at build-${MSYSTEM}/share/obicall/python/obicall/
-  # before running ctest - this exercises the real installed-layout
-  # resolution path (not a dev-only fallback) as part of check().
-  local _staged_py="build-${MSYSTEM}/share/obicall/python/obicall"
+  # supervisor.c). build-check-${MSYSTEM}/bin is that binary's directory
+  # here, so stage the adapter at
+  # build-check-${MSYSTEM}/share/obicall/python/obicall/ before running
+  # ctest - this exercises the real installed-layout resolution path (not
+  # a dev-only fallback) as part of check().
+  local _staged_py="build-check-${MSYSTEM}/share/obicall/python/obicall"
   mkdir -p "${_staged_py}"
   cp "${srcdir}/${_realname}-${pkgver}"/python/obicall/*.py "${_staged_py}/"
 
-  "${MINGW_PREFIX}"/bin/ctest.exe --test-dir "build-${MSYSTEM}" --output-on-failure
+  "${MINGW_PREFIX}"/bin/ctest.exe --test-dir "build-check-${MSYSTEM}" --output-on-failure
 }
 
 package() {

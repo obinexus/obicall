@@ -1,0 +1,64 @@
+# Maintainer: Nnamdi Michael Okpala <obinexusmk2@proton.me>
+#
+# Arch Linux (x86_64) package. This is NOT the MSYS2 recipe: Windows
+# MSYS2 UCRT64 is packaged separately, by
+# packaging/msys2/mingw-w64-obicall/PKGBUILD.
+#
+# Builds only from the pinned, checksummed source archive of a release
+# tag - never a branch or a local checkout. See docs/RELEASING_LINUX.md.
+
+pkgname=obicall
+pkgver=0.1.2
+pkgrel=1
+pkgdesc='OBINexus dynamic dual-FFI polyglot runtime for sensor fusion (local desktop prototype)'
+arch=('x86_64')
+url='https://github.com/obinexus/obicall'
+license=('MIT')
+# glibc for the binaries; python runs the Python provider adapter, which
+# needs only the standard library plus this package's core library (via
+# ctypes) - see resolve_python_exe() in src/supervisor/supervisor.c.
+depends=('glibc' 'python')
+makedepends=('cmake' 'ninja')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+# Pinned by packaging/pin-pkgbuild.sh from the tag's archive, downloaded
+# and hashed - never typed in. All zeros is the placeholder committed
+# before the tag exists; makepkg rejects it as a mismatch.
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+
+build() {
+  # The packaged build: makepkg's own CFLAGS/LDFLAGS (CMAKE_BUILD_TYPE=None,
+  # per Arch's CMake package guidelines), no test suite, none of the
+  # worker's fault-injection hooks, and no embedded source-dir fallback
+  # path (see OBICALL_EMBED_SOURCE_DIR_FALLBACK).
+  cmake -S "$pkgname-$pkgver" -B build -G Ninja -W no-dev \
+    -DCMAKE_BUILD_TYPE=None \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DOBICALL_ENABLE_TESTS=OFF \
+    -DOBICALL_TEST_HOOKS=OFF \
+    -DOBICALL_EMBED_SOURCE_DIR_FALLBACK=OFF
+  cmake --build build
+
+  # A separate, test-enabled build for check() only; never packaged.
+  cmake -S "$pkgname-$pkgver" -B build-check -G Ninja -W no-dev \
+    -DCMAKE_BUILD_TYPE=None \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DOBICALL_ENABLE_TESTS=ON \
+    -DOBICALL_EMBED_SOURCE_DIR_FALLBACK=OFF
+  cmake --build build-check
+}
+
+check() {
+  # With the source-dir fallback off, the obicall under test finds the
+  # Python adapter the way the installed one does - relative to its own
+  # bin/, at ../share/obicall/python/obicall/ - so stage it there.
+  local _staged_py=build-check/share/obicall/python/obicall
+  mkdir -p "$_staged_py"
+  cp "$pkgname-$pkgver"/python/obicall/*.py "$_staged_py/"
+
+  ctest --test-dir build-check --output-on-failure
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 "$pkgname-$pkgver/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

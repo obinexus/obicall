@@ -3,6 +3,7 @@ build-*/
 install/
 install_*/
 out/
+dist/
 
 *.o
 *.obj

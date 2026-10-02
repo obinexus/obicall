@@ -1,0 +1,245 @@
+name: Publish package repositories
+
+# Publishes a release's packages as signed APT and pacman repositories on
+# GitHub Pages, then proves the live site works: clean Debian/Ubuntu, Arch
+# Linux and MSYS2 systems do the documented one-time setup and install the
+# package by name.
+#
+#   apt     <site>/apt            suite stable, component main (amd64)
+#   pacman  <site>/arch/x86_64    [obicall]          Arch Linux
+#   pacman  <site>/msys2/ucrt64   [obicall-ucrt64]   MSYS2 UCRT64 (Windows)
+#
+# Runs after a successful Release workflow run, or manually for a tag.
+# One-time setup it needs (see docs/RELEASING_LINUX.md): Pages enabled with
+# source "GitHub Actions", the OBICALL_REPO_SIGNING_KEY secret, and the
+# matching public key committed as packaging/repo/obicall-archive-keyring.asc.
+# Each publish replaces the site with that release's packages.
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose packages to publish (e.g. v0.1.2)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    name: Fetch and verify the release's packages
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      fingerprint: ${{ steps.key.outputs.fingerprint }}
+      deb-version: ${{ steps.packages.outputs.deb-version }}
+      arch-version: ${{ steps.packages.outputs.arch-version }}
+      msys2-version: ${{ steps.packages.outputs.msys2-version }}
+    steps:
+      - name: Resolve the tag
+        id: tag
+        env:
+          # For a workflow_run, head_branch is the tag the Release run was for.
+          TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+        run: |
+          [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::'$TAG' is not a vX.Y.Z release tag"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+
+      # The default branch's committed public key is the trust anchor.
+      - uses: actions/checkout@v7
+
+      - name: Read the committed signing key
+        id: key
+        run: |
+          key=packaging/repo/obicall-archive-keyring.asc
+          [ -s "$key" ] || { echo "::error::$key is not committed - see docs/RELEASING_LINUX.md, One-time setup"; exit 1; }
+          fpr=$(gpg --batch --with-colons --show-keys "$key" | awk -F: '$1 == "fpr" && !n++ { print $10 }')
+          echo "fingerprint=$fpr" >> "$GITHUB_OUTPUT"
+          echo "signing key $fpr"
+
+      - name: Download the packages and check them against SHA256SUMS
+        id: packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          mkdir -p pkgs && cd pkgs
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS \
+            --pattern 'obicall_*.deb' --pattern 'obicall-*-x86_64.pkg.tar.zst' \
+            --pattern 'mingw-w64-ucrt-x86_64-obicall-*.pkg.tar.zst'
+          sha256sum --check --ignore-missing --strict SHA256SUMS
+          mkdir deb arch msys2
+          mv obicall_*.deb deb/
+          mv obicall-*-x86_64.pkg.tar.zst arch/
+          mv mingw-w64-ucrt-x86_64-obicall-*.pkg.tar.zst msys2/
+          for d in deb arch msys2; do
+            set -- "$d"/*
+            [ "$#" -eq 1 ] || { echo "::error::expected exactly one $d package on $TAG"; exit 1; }
+          done
+          echo "deb-version=$(dpkg-deb -f deb/*.deb Version)" >> "$GITHUB_OUTPUT"
+          a=$(basename arch/*); a=${a#obicall-}; echo "arch-version=${a%-x86_64.pkg.tar.zst}" >> "$GITHUB_OUTPUT"
+          m=$(basename msys2/*); m=${m#mingw-w64-ucrt-x86_64-obicall-}; echo "msys2-version=${m%-any.pkg.tar.zst}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-packages
+          path: pkgs/*/
+          if-no-files-found: error
+
+  apt:
+    name: Build and sign the APT repository
+    needs: prepare
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-packages
+          path: pkgs
+
+      - name: Build and sign
+        env:
+          OBICALL_REPO_SIGNING_KEY: ${{ secrets.OBICALL_REPO_SIGNING_KEY }}
+          OBICALL_REPO_SIGNING_PASSPHRASE: ${{ secrets.OBICALL_REPO_SIGNING_PASSPHRASE }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apt-utils
+          fpr=$(bash packaging/repo/import-signing-key.sh "$RUNNER_TEMP/gnupg" packaging/repo/obicall-archive-keyring.asc)
+          GNUPGHOME="$RUNNER_TEMP/gnupg" bash packaging/repo/build-apt-repo.sh pkgs/deb site/apt "$fpr"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site-apt
+          path: site/
+          if-no-files-found: error
+
+  pacman:
+    name: Build and sign the pacman repositories
+    needs: prepare
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - name: Update the system
+        run: pacman -Syu --noconfirm
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-packages
+          path: pkgs
+
+      - name: Build and sign [obicall] and [obicall-ucrt64]
+        env:
+          OBICALL_REPO_SIGNING_KEY: ${{ secrets.OBICALL_REPO_SIGNING_KEY }}
+          OBICALL_REPO_SIGNING_PASSPHRASE: ${{ secrets.OBICALL_REPO_SIGNING_PASSPHRASE }}
+        run: |
+          fpr=$(bash packaging/repo/import-signing-key.sh "$RUNNER_TEMP/gnupg" packaging/repo/obicall-archive-keyring.asc)
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          bash packaging/repo/build-pacman-repo.sh obicall pkgs/arch site/arch/x86_64 "$fpr"
+          bash packaging/repo/build-pacman-repo.sh obicall-ucrt64 pkgs/msys2 site/msys2/ucrt64 "$fpr"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site-pacman
+          path: site/
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: [prepare, apt, pacman]
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: site-apt
+          path: site
+      - uses: actions/download-artifact@v8
+        with:
+          name: site-pacman
+          path: site
+
+      - name: Add the keyring files and landing page
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
+        run: |
+          cp packaging/repo/obicall-archive-keyring.asc site/
+          gpg --dearmor < site/obicall-archive-keyring.asc > site/obicall-archive-keyring.gpg
+          base="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}"
+          bash packaging/repo/write-site-index.sh site "$base" "$VERSION" "$FINGERPRINT"
+          find site -type f | sort
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v5
+
+  verify-apt:
+    name: apt install obicall from the live site (${{ matrix.image }})
+    needs: [prepare, deploy]
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13']
+    steps:
+      - uses: actions/checkout@v7
+      - run: >-
+          bash packaging/repo/verify-apt-client.sh "${{ needs.deploy.outputs.page-url }}"
+          "${{ needs.prepare.outputs.fingerprint }}" "${{ needs.prepare.outputs.deb-version }}"
+
+  verify-arch:
+    name: pacman -Syu obicall from the live site (Arch Linux)
+    needs: [prepare, deploy]
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v7
+      - run: >-
+          bash packaging/repo/verify-pacman-client.sh "${{ needs.deploy.outputs.page-url }}"
+          "${{ needs.prepare.outputs.fingerprint }}" obicall 'arch/$arch' obicall
+          "${{ needs.prepare.outputs.arch-version }}"
+
+  verify-msys2:
+    name: pacman -S mingw-w64-ucrt-x86_64-obicall from the live site (MSYS2 UCRT64)
+    needs: [prepare, deploy]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: curl
+      - run: >-
+          bash packaging/repo/verify-pacman-client.sh "${{ needs.deploy.outputs.page-url }}"
+          "${{ needs.prepare.outputs.fingerprint }}" obicall-ucrt64 msys2/ucrt64
+          mingw-w64-ucrt-x86_64-obicall "${{ needs.prepare.outputs.msys2-version }}"

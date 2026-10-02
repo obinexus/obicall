@@ -1,0 +1,138 @@
+name: Linux packages
+
+# Validates packaging on every push and pull request, without publishing
+# anything: builds the .deb and the Arch package from a snapshot archive
+# of the commit under test, install-tests them on clean systems, then
+# rehearses signed-repository publication end to end - a throwaway key
+# signs APT and pacman repositories served locally, and clean containers
+# install `obicall` from them by name using the documented setup.
+# (windows-ucrt64.yml builds the committed MSYS2 recipe; release.yml and
+# publish-repos.yml do the real thing for a release tag.)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  snapshot:
+    name: Snapshot source archive
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the project version
+        id: version
+        run: |
+          version=$(sed -n '/^project(/,/)/s/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::cannot read the project version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Archive this commit; pin both recipes to the archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir source
+          git archive --format=tar.gz --prefix="obicall-$VERSION/" -o "source/obicall-$VERSION.tar.gz" HEAD
+          cp packaging/archlinux/PKGBUILD source/PKGBUILD.archlinux
+          cp packaging/msys2/mingw-w64-obicall/PKGBUILD source/PKGBUILD.msys2
+          bash packaging/pin-pkgbuild.sh --local source/PKGBUILD.archlinux "$VERSION" "source/obicall-$VERSION.tar.gz"
+          bash packaging/pin-pkgbuild.sh --local source/PKGBUILD.msys2 "$VERSION" "source/obicall-$VERSION.tar.gz"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source
+          path: source/
+          if-no-files-found: error
+
+  packages:
+    needs: snapshot
+    uses: ./.github/workflows/build-packages.yml
+    with:
+      version: ${{ needs.snapshot.outputs.version }}
+
+  repo-rehearsal:
+    name: Signed repositories, end to end (throwaway key)
+    needs: [snapshot, packages]
+    runs-on: ubuntu-24.04
+    env:
+      SRC: obicall-${{ needs.snapshot.outputs.version }}
+      VERSION: ${{ needs.snapshot.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: source
+          path: source
+      - uses: actions/download-artifact@v8
+        with:
+          name: deb
+          path: pkgs/deb
+      - uses: actions/download-artifact@v8
+        with:
+          name: arch
+          path: pkgs/arch
+
+      - name: Unpack the source archive
+        run: tar -xzf "source/$SRC.tar.gz"
+
+      - name: Create a throwaway signing key (outside the tree; discarded with this runner)
+        run: |
+          keys="$RUNNER_TEMP/keys"
+          bash "$SRC/packaging/repo/create-signing-key.sh" "$keys" "$keys/public.asc"
+          OBICALL_REPO_SIGNING_KEY=$(cat "$keys/obicall-repo-signing.secret.asc") \
+            bash "$SRC/packaging/repo/import-signing-key.sh" "$RUNNER_TEMP/gnupg" "$keys/public.asc" \
+            > "$RUNNER_TEMP/fingerprint"
+          echo "FINGERPRINT=$(cat "$RUNNER_TEMP/fingerprint")" >> "$GITHUB_ENV"
+
+      - name: Read the built package versions
+        run: |
+          echo "DEB_VERSION=$(dpkg-deb -f pkgs/deb/obicall_*.deb Version)" >> "$GITHUB_ENV"
+          arch_pkg=$(basename pkgs/arch/obicall-*-x86_64.pkg.tar.zst)
+          arch_version=${arch_pkg#obicall-}
+          echo "ARCH_VERSION=${arch_version%-x86_64.pkg.tar.zst}" >> "$GITHUB_ENV"
+
+      - name: Build the signed APT repository
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apt-utils
+          GNUPGHOME="$RUNNER_TEMP/gnupg" bash "$SRC/packaging/repo/build-apt-repo.sh" pkgs/deb site/apt "$FINGERPRINT"
+
+      - name: Build the signed pacman repository (Arch Linux container)
+        run: |
+          docker run --rm -v "$PWD:/w" -v "$RUNNER_TEMP/keys:/keys:ro" -w /w archlinux:base-devel bash -c '
+            set -euo pipefail
+            export OBICALL_REPO_SIGNING_KEY="$(cat /keys/obicall-repo-signing.secret.asc)"
+            fpr=$(bash "$0/packaging/repo/import-signing-key.sh" /tmp/gnupg /keys/public.asc)
+            GNUPGHOME=/tmp/gnupg bash "$0/packaging/repo/build-pacman-repo.sh" obicall pkgs/arch site/arch/x86_64 "$fpr"
+            chown -R "$1" site' "$SRC" "$(id -u):$(id -g)"
+
+      - name: Add the keyring files and landing page; serve the site locally
+        run: |
+          cp "$RUNNER_TEMP/keys/public.asc" site/obicall-archive-keyring.asc
+          gpg --dearmor < site/obicall-archive-keyring.asc > site/obicall-archive-keyring.gpg
+          bash "$SRC/packaging/repo/write-site-index.sh" site http://127.0.0.1:8000 "$VERSION" "$FINGERPRINT"
+          (cd site && nohup python3 -m http.server 8000 --bind 127.0.0.1 > "$RUNNER_TEMP/http.log" 2>&1 &)
+          for _ in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8000/apt/dists/stable/InRelease && break; sleep 1; done
+
+      - name: apt install obicall, by name (Ubuntu 24.04, Debian 13)
+        run: |
+          for image in ubuntu:24.04 debian:13; do
+            docker run --rm --network host -v "$PWD/$SRC:/src:ro" "$image" \
+              bash /src/packaging/repo/verify-apt-client.sh http://127.0.0.1:8000 "$FINGERPRINT" "$DEB_VERSION"
+          done
+
+      - name: pacman -Syu obicall, by name (Arch Linux)
+        run: |
+          docker run --rm --network host -v "$PWD/$SRC:/src:ro" archlinux:base-devel \
+            bash /src/packaging/repo/verify-pacman-client.sh http://127.0.0.1:8000 "$FINGERPRINT" \
+                 obicall 'arch/$arch' obicall "$ARCH_VERSION"

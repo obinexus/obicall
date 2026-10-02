@@ -1,0 +1,255 @@
+name: Build packages
+
+# Reusable: builds, checks, and install-tests the Debian, Arch Linux and
+# (optionally) MSYS2 UCRT64 packages from a prepared `source` artifact.
+# Called by linux-packages.yml (a snapshot archive of the commit under test)
+# and release.yml (a release tag's published source archive).
+#
+# The `source` artifact holds:
+#   obicall-<version>.tar.gz  the source archive every package builds from
+#   PKGBUILD.archlinux        packaging/archlinux/PKGBUILD, pinned to it
+#   PKGBUILD.msys2            packaging/msys2/mingw-w64-obicall/PKGBUILD, pinned to it
+# (pinned by packaging/pin-pkgbuild.sh). Each job runs the packaging scripts
+# from inside that archive, so a release is checked by the tooling it was
+# tagged with.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Upstream version being packaged (X.Y.Z)
+        required: true
+        type: string
+      msys2:
+        description: Also build and test the MSYS2 UCRT64 package
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  SRC: obicall-${{ inputs.version }}
+  PACKAGER: Obicall CI <obinexusmk2@proton.me>
+
+jobs:
+  deb:
+    name: Debian package (built on Ubuntu 22.04)
+    runs-on: ubuntu-24.04
+    # The oldest glibc among the tested targets, so one .deb serves them all.
+    container: ubuntu:22.04
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build dpkg-dev file python3
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: source
+          path: source
+
+      - name: Unpack the source archive
+        run: tar -xzf "source/$SRC.tar.gz"
+
+      - name: Test suite (separate, test-enabled build)
+        run: |
+          cmake -S "$SRC" -B build-test -G Ninja -DCMAKE_BUILD_TYPE=Release -DOBICALL_ENABLE_TESTS=ON
+          cmake --build build-test
+          ctest --test-dir build-test --output-on-failure
+
+      - name: Build and check the .deb (release configuration)
+        run: bash "$SRC/packaging/linux/build-deb.sh" "$SRC" dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  deb-install:
+    name: Install the .deb on ${{ matrix.image }}
+    needs: deb
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13']
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: deb
+          path: deb
+      - uses: actions/download-artifact@v8
+        with:
+          name: source
+          path: source
+
+      - name: Install with apt (resolves its dependencies)
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./deb/obicall_*.deb
+          dpkg -s obicall | grep -E '^(Version|Depends):'
+
+      - name: Smoke test as an unprivileged user, outside any checkout
+        run: |
+          tar -xzOf "source/$SRC.tar.gz" "$SRC/packaging/smoke-test-installed.sh" > /tmp/smoke-test-installed.sh
+          useradd -m tester
+          su tester -c 'cd ~ && bash /tmp/smoke-test-installed.sh /usr'
+
+      - name: Remove cleanly
+        run: |
+          apt-get remove -y obicall
+          if [ -e /usr/bin/obicall ] || [ -e /usr/share/obicall ]; then
+            echo "files left behind after removal"; exit 1
+          fi
+
+  arch:
+    name: Arch Linux package
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - name: Update the system; create an unprivileged build user
+        run: |
+          pacman -Syu --noconfirm --needed namcap
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: /usr/bin/pacman' > /etc/sudoers.d/builder
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: source
+          path: source
+
+      - name: makepkg --syncdeps (installs only the declared dependencies, runs check())
+        run: |
+          dir=/home/builder/obicall
+          mkdir -p "$dir"
+          cp source/PKGBUILD.archlinux "$dir/PKGBUILD"
+          # A recipe pinned to a snapshot names the archive as a local file;
+          # one pinned to a release tag downloads (and verifies) it itself.
+          if ! grep -q '^source=.*::' "$dir/PKGBUILD"; then
+            cp "source/$SRC.tar.gz" "$dir/"
+          fi
+          chown -R builder: "$dir"
+          cd "$dir"
+          su builder -c "PACKAGER='$PACKAGER' makepkg --syncdeps --noconfirm --cleanbuild"
+
+      - name: namcap (informational)
+        working-directory: /home/builder/obicall
+        run: |
+          namcap PKGBUILD || true
+          namcap obicall-[0-9]*.pkg.tar.zst || true
+
+      - name: Check the package contents
+        working-directory: /home/builder/obicall
+        run: |
+          pkg=$(ls obicall-[0-9]*-x86_64.pkg.tar.zst)
+          mkdir extracted
+          tar -xf "$pkg" -C extracted
+          bash "src/$SRC/packaging/check-package-files.sh" extracted "$PWD/src" "$PWD"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "$pkg" "$GITHUB_WORKSPACE/dist/"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: arch
+          path: dist/*.pkg.tar.zst
+          if-no-files-found: error
+
+  arch-install:
+    name: Install the Arch package on a fresh Arch Linux
+    needs: arch
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: arch
+          path: arch
+      - uses: actions/download-artifact@v8
+        with:
+          name: source
+          path: source
+
+      - name: Install with pacman -U (resolves its dependencies)
+        run: |
+          pacman -Syu --noconfirm
+          pacman -U --noconfirm arch/obicall-*.pkg.tar.zst
+          pacman -Qi obicall | grep -E '^(Version|Depends On)'
+
+      - name: Smoke test as an unprivileged user, outside any checkout
+        run: |
+          tar -xzOf "source/$SRC.tar.gz" "$SRC/packaging/smoke-test-installed.sh" > /tmp/smoke-test-installed.sh
+          useradd -m tester
+          su tester -c 'cd ~ && bash /tmp/smoke-test-installed.sh /usr'
+
+      - name: Remove cleanly
+        run: |
+          pacman -R --noconfirm obicall
+          if [ -e /usr/bin/obicall ] || [ -e /usr/share/obicall ]; then
+            echo "files left behind after removal"; exit 1
+          fi
+
+  msys2:
+    name: MSYS2 UCRT64 package
+    if: inputs.msys2
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: source
+          path: source
+
+      - name: makepkg-mingw --syncdeps --cleanbuild (runs check())
+        run: |
+          mkdir build
+          cp source/PKGBUILD.msys2 build/PKGBUILD
+          if ! grep -q '^source=.*::' build/PKGBUILD; then
+            cp "source/$SRC.tar.gz" build/
+          fi
+          cd build
+          makepkg-mingw --syncdeps --noconfirm --cleanbuild
+
+      - name: Check the package contents
+        working-directory: build
+        run: |
+          pkg=$(ls mingw-w64-ucrt-x86_64-obicall-*.pkg.tar.zst)
+          mkdir extracted
+          tar -xf "$pkg" -C extracted
+          bash "src/$SRC/packaging/check-package-files.sh" extracted "$(cygpath -m "$PWD")" "$PWD" "$(cygpath -w "$PWD")"
+          mkdir -p ../dist
+          cp "$pkg" ../dist/
+
+      - name: Install with pacman -U
+        run: pacman -U --noconfirm dist/mingw-w64-ucrt-x86_64-obicall-*.pkg.tar.zst
+
+      - name: Smoke test, outside any checkout
+        run: bash "build/src/$SRC/packaging/smoke-test-installed.sh" "$MINGW_PREFIX"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: msys2
+          path: dist/*.pkg.tar.zst
+          if-no-files-found: error

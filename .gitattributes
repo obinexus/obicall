@@ -5,5 +5,5 @@
 # job despite the repo's own blobs being LF-only: GitHub's windows-latest
 # runners default to git core.autocrlf=true, which rewrites LF -> CRLF on
 # checkout unless overridden here.
-packaging/msys2/**/PKGBUILD text eol=lf
+packaging/**/PKGBUILD text eol=lf
 *.sh text eol=lf

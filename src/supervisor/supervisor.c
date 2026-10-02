@@ -271,13 +271,22 @@ int supervisor_start(supervisor_t* sv, const char* config_path, const char* runt
                              OBICALL_SOURCE_DIR);
                 }
 #endif
+                /* The core library the Python adapter loads via ctypes.
+                 * Windows: obicall.dll sits next to the executables in
+                 * both a build tree and an install. Elsewhere it is only
+                 * co-located in a build tree (CMAKE_LIBRARY_OUTPUT_DIRECTORY
+                 * is bin/); an install keeps it in lib/, reached through
+                 * the same bin-relative path as the binaries' own RPATH
+                 * (see src/supervisor/CMakeLists.txt). */
                 char core_lib_path[700];
 #if defined(_WIN32)
                 snprintf(core_lib_path, sizeof(core_lib_path), "%s/obicall.dll", bin_dir);
-#elif defined(__APPLE__)
-                snprintf(core_lib_path, sizeof(core_lib_path), "%s/libobicall.dylib", bin_dir);
 #else
-                snprintf(core_lib_path, sizeof(core_lib_path), "%s/libobicall.so", bin_dir);
+                snprintf(core_lib_path, sizeof(core_lib_path), "%s/%s", bin_dir, OBICALL_CORE_LIB_FILE_NAME);
+                if (!file_exists_quick(core_lib_path)) {
+                    snprintf(core_lib_path, sizeof(core_lib_path), "%s/%s/%s", bin_dir,
+                             OBICALL_INSTALL_BIN_TO_LIBDIR, OBICALL_CORE_LIB_FILE_NAME);
+                }
 #endif
                 const char* wargv[] = {python_exe,
                                         script_path,
@@ -386,6 +395,13 @@ void supervisor_stop_all(supervisor_t* sv) {
             osal_process_close(c->proc);
             c->proc = NULL;
         }
+        /* Stopping is terminal - nothing respawns a child afterwards - so
+         * release the argv copies set_argv() made for (re)spawning it. */
+        for (int a = 0; a < c->argc; ++a) {
+            free(c->argv[a]);
+            c->argv[a] = NULL;
+        }
+        c->argc = 0;
     }
 }
 
