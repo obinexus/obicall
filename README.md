@@ -31,8 +31,8 @@ workflows:
 > **Status: not published yet.** The repositories go live with the first
 > release made after the maintainer's one-time setup (signing key, GitHub
 > Pages - see [docs/RELEASING_LINUX.md](docs/RELEASING_LINUX.md)); until
-> the fingerprint below is filled in, the commands in this section will not
-> find anything. Meanwhile, install a downloaded package from
+> then, the commands in this section will not find anything at the
+> repository URLs. Meanwhile, install a downloaded package from
 > [Releases](https://github.com/obinexus/obicall/releases) by file name
 > (`sudo apt install ./obicall_*.deb`, `sudo pacman -U obicall-*.pkg.tar.zst`,
 > or `pacman -U mingw-w64-ucrt-x86_64-obicall-*.pkg.tar.zst`), or build from
@@ -44,7 +44,8 @@ which key signs them. Before trusting the key, check that the fingerprint
 `gpg --show-keys` prints matches this one, published here on GitHub rather
 than only on the package site:
 
-**Signing key fingerprint:** not yet created.
+**Signing key fingerprint:** `38B7825A2ABABB95626D45371272EE225B68CE42`
+(Ed25519, "Obicall package repository", expires 2029-10-01)
 
 ### Debian and Ubuntu
 
@@ -75,7 +76,7 @@ different system with a different package name.
 curl -fsSLO https://obinexus.github.io/obicall/obicall-archive-keyring.asc
 gpg --show-keys obicall-archive-keyring.asc                     # compare the fingerprint
 sudo pacman-key --add obicall-archive-keyring.asc
-sudo pacman-key --lsign-key <FINGERPRINT>
+sudo pacman-key --lsign-key 38B7825A2ABABB95626D45371272EE225B68CE42
 printf '\n[obicall]\nSigLevel = Required DatabaseRequired\nServer = https://obinexus.github.io/obicall/arch/$arch\n' \
   | sudo tee -a /etc/pacman.conf
 sudo pacman -Syu obicall
@@ -89,7 +90,7 @@ In the **MSYS2 UCRT64** shell (not PowerShell; MSYS2 has no `sudo`):
 curl -fsSLO https://obinexus.github.io/obicall/obicall-archive-keyring.asc
 gpg --show-keys obicall-archive-keyring.asc                     # compare the fingerprint
 pacman-key --add obicall-archive-keyring.asc
-pacman-key --lsign-key <FINGERPRINT>
+pacman-key --lsign-key 38B7825A2ABABB95626D45371272EE225B68CE42
 printf '\n[obicall-ucrt64]\nSigLevel = Required DatabaseRequired\nServer = https://obinexus.github.io/obicall/msys2/ucrt64\n' \
   >> /etc/pacman.conf
 pacman -Syu

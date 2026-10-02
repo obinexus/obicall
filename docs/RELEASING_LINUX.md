@@ -245,6 +245,10 @@ itself ran; to roll back, rerun `publish-repos.yml` for the previous tag.
 
 ## Key maintenance
 
+Current key: `38B7825A2ABABB95626D45371272EE225B68CE42` (Ed25519, created
+2026-10-02, **expires 2029-10-01**), committed as
+`packaging/repo/obicall-archive-keyring.asc`.
+
 - **Before it expires** (3 years after creation): in a GNUPGHOME holding the
   secret key, `gpg --quick-set-expire FPR 3y`, then re-export both halves,
   update the secret and the committed public key, and republish. Users
