@@ -6,7 +6,9 @@ name: Linux packages
 # rehearses signed-repository publication end to end - a throwaway key
 # signs APT and pacman repositories served locally, and clean containers
 # install `obicall` from them by name using the documented setup.
-# (windows-ucrt64.yml builds the committed MSYS2 recipe; release.yml and
+# It also builds and install-tests the MSYS2 UCRT64 package from the same
+# snapshot - the path release.yml takes for a tag. (windows-ucrt64.yml
+# builds the committed MSYS2 recipe as pinned; release.yml and
 # publish-repos.yml do the real thing for a release tag.)
 
 on:
@@ -60,6 +62,7 @@ jobs:
     uses: ./.github/workflows/build-packages.yml
     with:
       version: ${{ needs.snapshot.outputs.version }}
+      msys2: true
 
   repo-rehearsal:
     name: Signed repositories, end to end (throwaway key)
