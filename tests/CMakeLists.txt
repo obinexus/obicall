@@ -25,6 +25,10 @@ endforeach()
 
 add_library(provider_bad_abi MODULE fixtures/provider_bad_abi.c)
 set_target_properties(provider_bad_abi PROPERTIES PREFIX "" C_VISIBILITY_PRESET hidden)
+if(APPLE)
+    # Same naming as provider_c_sim (see src/providers/c_sim/CMakeLists.txt).
+    set_target_properties(provider_bad_abi PROPERTIES SUFFIX ".dylib")
+endif()
 target_link_libraries(provider_bad_abi PRIVATE Obicall::core)
 add_custom_command(TARGET provider_bad_abi POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:provider_bad_abi> ${PROJECT_SOURCE_DIR}/tests/fixtures/

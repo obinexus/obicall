@@ -8,6 +8,12 @@ set_target_properties(provider_c_sim PROPERTIES
     C_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON
 )
+# CMake names MODULE libraries *.so on macOS too, but obicall-workerd (for
+# an extension-less manifest artifact_path) and `obicall doctor` look for
+# the platform's shared-library name there: provider_c_sim.dylib.
+if(APPLE)
+    set_target_properties(provider_c_sim PROPERTIES SUFFIX ".dylib")
+endif()
 
 target_include_directories(provider_c_sim PRIVATE ${PROJECT_SOURCE_DIR}/src/core)
 target_link_libraries(provider_c_sim PRIVATE Obicall::core)

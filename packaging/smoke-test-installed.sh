@@ -10,9 +10,12 @@
 #           use "$MINGW_PREFIX" inside MSYS2 UCRT64)
 #
 # Beyond exit codes, `run` and `demo` are checked for evidence that both
-# provider languages really worked: each C and Python worker logged a
-# successful journal connection for both brokers, none crashed or hung,
-# and observations from both providers' sensors reached the journal.
+# provider languages really worked: all four workers (C and Python, for
+# brokers A and B) ran, none exited, hung, or was restarted, and
+# observations from both providers' sensors reached the journal. Pass/fail
+# rests only on evidence a single process writes - heartbeat files, the
+# journal segment, the CLI's own JSON - never on lines in the stderr that
+# every child process shares, which on Windows can interleave mid-line.
 set -euo pipefail
 
 prefix=${1:-/usr}
@@ -69,25 +72,28 @@ obicall run --config "$config" --runtime-dir run --duration-seconds 6 --json >ru
     || { cat run.err >&2; fail "run exited nonzero"; }
 expect run.json '"event":"started"' "run never reported started"
 expect run.json '"event":"stopped"' "run never reported stopped"
-for broker in A B; do
-    expect run.err "obicall-workerd\[worker_position_$broker\]: loaded provider_c_sim .*connected to journal" \
-        "C provider worker for broker $broker never connected"
-    expect run.err "obicall-worker\[python:worker_inertial_$broker\]: connected" \
-        "Python provider worker for broker $broker never connected"
+# Each worker writes its own heartbeat file (atomically: temp file, then
+# rename). A worker that cannot load its provider, the core library, or
+# the Python adapter, or cannot reach the journal, exits - and the
+# supervisor then logs the exit and restarts it, which is rejected below.
+for worker in worker_position_A worker_position_B worker_inertial_A worker_inertial_B; do
+    [ -s "run/$worker.pid" ] || { cat run.err >&2; fail "$worker never started (no heartbeat file)"; }
 done
-reject run.err 'Traceback|exited \(code=|appears hung|exceeded restart bound' \
+reject run.err 'Traceback|exited \(code=|restarting |appears hung|exceeded restart bound' \
     "a process crashed, hung, or was restarted during run"
 expect run/journal.segment 'cam_position_a' "no C provider observation reached the journal"
 expect run/journal.segment 'imu_a' "no Python provider observation reached the journal"
-echo "both providers connected for brokers A and B; both sensors present in the journal"
+intact=$(grep -acE 'obicall-workerd\[worker_position_[AB]\]: loaded provider_c_sim .*connected to journal|obicall-worker\[python:worker_inertial_[AB]\]: connected' run.err || true)
+echo "all four workers (C and Python, brokers A and B) ran the whole time; both sensors present in the journal"
+echo "($intact of 4 worker connection log lines intact in the shared stderr - informational)"
 
 step "obicall demo --scenario broker-failover"
 obicall demo --scenario broker-failover --config "$config" --json >demo.json 2>demo.err \
     || { cat demo.json demo.err >&2; fail "demo exited nonzero"; }
 cat demo.json
 expect demo.json '"overall":"pass"' "broker-failover demo did not pass"
-expect demo.err 'obicall-worker\[python:worker_inertial_[AB]\]: connected' \
-    "no Python provider worker connected during the demo"
+demo_journal=$(ls obicall-demo-run-*/journal.segment)
+expect "$demo_journal" 'imu_a' "no Python provider observation reached the journal during the demo"
 
 cd /
 rm -rf "$work"
