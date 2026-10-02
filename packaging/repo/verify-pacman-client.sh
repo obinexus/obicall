@@ -61,8 +61,9 @@ else
 fi
 # -------------------------------------------------------------------------
 
-pacman -Qi "$package" | grep -E '^(Name|Version|Validated By)'
-pacman -Qi "$package" | grep -q '^Validated By.*Signature' \
+info=$(pacman -Qi "$package")
+grep -E '^(Name|Version|Validated By)' <<< "$info"
+grep -q '^Validated By.*Signature' <<< "$info" \
     || { echo "FAIL: pacman did not validate $package by signature" >&2; exit 1; }
 installed=$(pacman -Q "$package" | cut -d' ' -f2)
 if [ -n "$version" ] && [ "$installed" != "$version" ]; then

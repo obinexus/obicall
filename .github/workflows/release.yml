@@ -71,7 +71,10 @@ jobs:
           archive="source/obicall-$VERSION.tar.gz"
           curl -fsSL -o "$archive" "https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG.tar.gz"
           # The archive GitHub serves must be exactly the tagged commit.
-          archived=$(gzip -dc "$archive" | git get-tar-commit-id)
+          # (Decompressed to a file first: get-tar-commit-id reads only the
+          # header, and under pipefail gzip's broken pipe would fail the step.)
+          gzip -dc "$archive" > "$RUNNER_TEMP/source.tar"
+          archived=$(git get-tar-commit-id < "$RUNNER_TEMP/source.tar")
           [ "$archived" = "$(git rev-parse HEAD)" ] || { echo "::error::archive is commit $archived, tag is $(git rev-parse HEAD)"; exit 1; }
           cp packaging/archlinux/PKGBUILD source/PKGBUILD.archlinux
           cp packaging/msys2/mingw-w64-obicall/PKGBUILD source/PKGBUILD.msys2
