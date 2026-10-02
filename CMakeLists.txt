@@ -1,13 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(obicall
-    VERSION 0.1.1
+    VERSION 0.1.2
     DESCRIPTION "OBINexus dynamic dual-FFI polyglot runtime for sensor fusion"
     LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+
+# Strict -std=c11 (CMAKE_C_EXTENSIONS OFF) makes glibc hide every POSIX
+# declaration the osal/ and core sources use on Linux (clock_gettime,
+# CLOCK_MONOTONIC, nanosleep, kill, fileno, select/fd_set, struct
+# timeval, ...) - the build fails outright without these. macOS and
+# MinGW expose the same APIs without feature-test macros.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_compile_definitions(_POSIX_C_SOURCE=200809L _DEFAULT_SOURCE)
+endif()
 
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
@@ -35,6 +44,29 @@ option(OBICALL_TEST_HOOKS "Compile in deliberate crash/hang fault injection for 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(GNUInstallDirs)
 include(GenerateExportHeader)
+
+# The installed lib/ directory, relative to the installed bin/ directory
+# (e.g. "../lib", or "../lib/x86_64-linux-gnu" under Debian's multiarch
+# GNUInstallDirs default). The CLI and supervisor locate the installed
+# core library and providers through this relative path - never an
+# absolute build, staging, or install path baked into a binary (see
+# OBICALL_EMBED_SOURCE_DIR_FALLBACK in src/supervisor/CMakeLists.txt).
+file(RELATIVE_PATH OBICALL_INSTALL_BIN_TO_LIBDIR
+    "${CMAKE_INSTALL_FULL_BINDIR}" "${CMAKE_INSTALL_FULL_LIBDIR}")
+
+# The same relative path as the installed binaries' RPATH, so an install
+# (a distro package under /usr, or a relocated copy of any prefix) finds
+# its own core library without LD_LIBRARY_PATH. The core library is named
+# obicall.so (PREFIX ""), not lib*.so, so ldconfig never indexes it and a
+# plain system-path lookup cannot be relied on. Windows needs nothing
+# here: the DLL is installed next to the executables in bin/.
+if(NOT DEFINED CMAKE_INSTALL_RPATH)
+    if(APPLE)
+        set(CMAKE_INSTALL_RPATH "@loader_path/${OBICALL_INSTALL_BIN_TO_LIBDIR}")
+    elseif(UNIX)
+        set(CMAKE_INSTALL_RPATH "\$ORIGIN/${OBICALL_INSTALL_BIN_TO_LIBDIR}")
+    endif()
+endif()
 
 if(OBICALL_ENABLE_SANITIZERS)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -106,6 +138,7 @@ install(FILES
     docs/IMPLEMENTATION_STATUS.md
     docs/VALIDATION.md
     docs/RELEASING_MSYS2.md
+    docs/RELEASING_LINUX.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/obicall)
 
 install(FILES LICENSE README.md
@@ -133,3 +166,10 @@ install(EXPORT ObicallTargets
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/obicall")
 
 message(STATUS "obicall ${PROJECT_VERSION} : tests=${OBICALL_ENABLE_TESTS} sanitizers=${OBICALL_ENABLE_SANITIZERS} fuzzing=${OBICALL_ENABLE_FUZZING} test-hooks=${OBICALL_TEST_HOOKS}")
+
+# Opt-in `cpack -G DEB` support (see docs/RELEASING_LINUX.md). Off by
+# default: it refuses dev-only configurations rather than packaging them.
+option(OBICALL_ENABLE_DEB_PACKAGING "Enable CPack Debian package generation (Linux only)" OFF)
+if(OBICALL_ENABLE_DEB_PACKAGING)
+    include(packaging/linux/CPackDeb.cmake)
+endif()

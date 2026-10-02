@@ -115,6 +115,7 @@ void osal_process_close(osal_process_t* proc) {
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <errno.h>
+#include <time.h>
 
 extern char** environ;
 

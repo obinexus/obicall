@@ -1,0 +1,161 @@
+name: Release
+
+# Pushing a vX.Y.Z tag builds every package from that tag's published
+# source archive (pinned by checksum), runs the test suite, install-tests
+# each package on clean systems, then attaches the packages, the archive,
+# the pinned recipes, and SHA256SUMS to the GitHub release (creating it as
+# a draft, and publishing it once every asset is attached). A release that
+# already has assets is never altered, and tags are never moved. A
+# successful run triggers publish-repos.yml, which puts the packages into
+# the signed APT and pacman repositories.
+#
+# workflow_dispatch reruns this for an existing tag (e.g. after a runner
+# outage, or with a fixed workflow from main). It fills only a release
+# with no assets yet; otherwise it stops rather than replace anything.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build (e.g. v0.1.2)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  source:
+    name: Pin the tag's source archive
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Resolve the tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::'$TAG' is not a vX.Y.Z release tag"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+
+      - name: The tag must match the project version
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          project=$(sed -n '/^project(/,/)/s/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt)
+          [ "$project" = "$VERSION" ] || { echo "::error::CMakeLists.txt is version $project, the tag says $VERSION"; exit 1; }
+
+      - name: Download the published archive; pin both recipes to it
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          mkdir source
+          archive="source/obicall-$VERSION.tar.gz"
+          curl -fsSL -o "$archive" "https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG.tar.gz"
+          # The archive GitHub serves must be exactly the tagged commit.
+          archived=$(gzip -dc "$archive" | git get-tar-commit-id)
+          [ "$archived" = "$(git rev-parse HEAD)" ] || { echo "::error::archive is commit $archived, tag is $(git rev-parse HEAD)"; exit 1; }
+          cp packaging/archlinux/PKGBUILD source/PKGBUILD.archlinux
+          cp packaging/msys2/mingw-w64-obicall/PKGBUILD source/PKGBUILD.msys2
+          bash packaging/pin-pkgbuild.sh source/PKGBUILD.archlinux "$VERSION" "$archive"
+          bash packaging/pin-pkgbuild.sh source/PKGBUILD.msys2 "$VERSION" "$archive"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source
+          path: source/
+          if-no-files-found: error
+
+  packages:
+    needs: source
+    uses: ./.github/workflows/build-packages.yml
+    with:
+      version: ${{ needs.source.outputs.version }}
+      msys2: true
+
+  release:
+    name: Attach assets to the GitHub release
+    needs: [source, packages]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.source.outputs.tag }}
+      VERSION: ${{ needs.source.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Assemble the assets and SHA256SUMS
+        run: |
+          mkdir dist
+          cp "artifacts/source/obicall-$VERSION.tar.gz" "dist/obicall-$VERSION-src.tar.gz"
+          cp artifacts/source/PKGBUILD.archlinux dist/PKGBUILD-archlinux
+          cp artifacts/source/PKGBUILD.msys2 dist/PKGBUILD-msys2
+          cp artifacts/deb/*.deb artifacts/arch/*.pkg.tar.zst artifacts/msys2/*.pkg.tar.zst dist/
+          (cd dist && sha256sum --binary -- * > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Create the release, or add to the existing one
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # A rebuild is not byte-identical, so mixing its files with ones
+            # already attached would break SHA256SUMS: only an empty release
+            # (e.g. one created by hand before the tag was pushed) is filled.
+            existing=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+            if [ -n "$existing" ]; then
+              echo "::error::release $TAG already has assets; a published release is never altered:"
+              echo "$existing"
+              exit 1
+            fi
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/*
+          else
+            prerelease=()
+            [[ "$VERSION" == 0.* ]] && prerelease=(--prerelease)
+            cat > notes.md <<EOF
+          Packages built from the [\`$TAG\` source archive](https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$TAG.tar.gz)
+          (attached as \`obicall-$VERSION-src.tar.gz\`) and tested by
+          [this Release workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID):
+          test suite, then a clean install plus smoke test (C and Python providers, broker failover)
+          of the .deb on Ubuntu 22.04/24.04/26.04 and Debian 12/13, the Arch Linux package, and the
+          MSYS2 UCRT64 package. \`PKGBUILD-archlinux\` and \`PKGBUILD-msys2\` are the recipes pinned to this
+          archive. Checksums: \`SHA256SUMS\`.
+
+          To install by name with apt or pacman, see
+          [Installing from package repositories](https://github.com/$GITHUB_REPOSITORY#installing-from-package-repositories).
+          EOF
+            # Created as a draft and published only once every asset is
+            # attached, so a failed upload never leaves a partial release.
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+              --title "Obicall $TAG" --notes-file notes.md --generate-notes "${prerelease[@]}" dist/*
+          fi
+          attached=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
+          built=$(cd dist && printf '%s\n' * | sort)
+          if [ "$attached" != "$built" ]; then
+            echo "::error::the release's assets differ from the built ones"
+            diff <(echo "$built") <(echo "$attached") || true
+            exit 1
+          fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,isDraft,isPrerelease,assets \
+            --jq '"\(.url) draft=\(.isDraft) prerelease=\(.isPrerelease)", (.assets[] | "  \(.name) \(.size)")'

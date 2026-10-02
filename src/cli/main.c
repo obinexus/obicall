@@ -75,11 +75,13 @@ static int cmd_doctor(int argc, char** argv) {
     /* Two layouts to check: co-located with this binary (the dev/build
      * tree, where CMAKE_RUNTIME/LIBRARY_OUTPUT_DIRECTORY both point at
      * the same bin/), and the CMake-installed tree's
-     * lib/obicall/providers/ (see src/providers/c_sim/CMakeLists.txt
-     * install()). */
+     * <libdir>/obicall/providers/ (see src/providers/c_sim/CMakeLists.txt
+     * install()), reached relative to bin/ - "../lib" for the usual
+     * layout, "../lib/<multiarch>" when CMAKE_INSTALL_LIBDIR says so. */
     char candidates[2][1200];
     snprintf(candidates[0], sizeof(candidates[0]), "%s/%s", exe_dir, provider_leaf);
-    snprintf(candidates[1], sizeof(candidates[1]), "%s/../lib/obicall/providers/%s", exe_dir, provider_leaf);
+    snprintf(candidates[1], sizeof(candidates[1]), "%s/%s/obicall/providers/%s", exe_dir,
+             OBICALL_INSTALL_BIN_TO_LIBDIR, provider_leaf);
 
     char provider_path[1200];
     provider_path[0] = '\0';

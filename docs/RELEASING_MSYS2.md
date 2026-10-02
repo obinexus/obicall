@@ -14,7 +14,24 @@ the same `makepkg-mingw` workflow below once per environment; nothing in
 the CMake build itself is UCRT64-specific.
 
 Conan packaging and Debian/APT packaging (`cpack -G DEB`) are explicitly
-out of scope for this release.
+out of scope for this release. (Debian/Ubuntu and Arch Linux packages, and
+the signed pacman repository `[obicall-ucrt64]` that makes `pacman -S
+mingw-w64-ucrt-x86_64-obicall` work, were added later - see
+[RELEASING_LINUX.md](RELEASING_LINUX.md).)
+
+## Test hooks in the published 0.1.1-1, and pkgrel 2
+
+The published `mingw-w64-ucrt-x86_64-obicall-0.1.1-1-any.pkg.tar.zst`
+was built with `-DOBICALL_ENABLE_TESTS=ON`, which also turns on
+`OBICALL_TEST_HOOKS` by default - so its `obicall-workerd.exe` carries the
+`--test-crash-after-ms`/`--test-hang-after-ms` fault-injection hooks that a
+release must not ship (confirmed with `packaging/check-package-files.sh` on
+the release asset, sha256 `7a35f174...b293`). The recipe now builds the
+packaged binaries with tests and hooks off, and runs `check()` against a
+separate, test-enabled build (`build-check-${MSYSTEM}`); `pkgrel=2` marks
+that rebuild of the same v0.1.1 source. Verified locally with
+`makepkg-mingw --cleanbuild` (18/18 tests in `check()`, package checks
+clean) - and the same split is what the 0.1.2 release builds.
 
 ## CI status
 
@@ -94,9 +111,11 @@ makepkg-mingw --syncdeps --cleanbuild
 This downloads the pinned source archive, verifies its SHA-256, configures
 with CMake (Ninja, `CMAKE_BUILD_TYPE=Release`,
 `CMAKE_INSTALL_PREFIX=$MINGW_PREFIX`, `OBICALL_EMBED_SOURCE_DIR_FALLBACK=OFF`
-- see "Why `OBICALL_EMBED_SOURCE_DIR_FALLBACK`" below), builds, runs the
-full `ctest` suite in `check()`, and stages the install through `DESTDIR`
-in `package()`. It produces
+- see "Why `OBICALL_EMBED_SOURCE_DIR_FALLBACK`" below; tests and test hooks
+off for the packaged build), builds that plus a separate test-enabled build,
+runs the full `ctest` suite against the latter in `check()`, and installs
+the packaged build with `cmake --install --prefix "${pkgdir}${MINGW_PREFIX}"`
+in `package()` (not `DESTDIR` - see the comment there). It produces
 `mingw-w64-ucrt-x86_64-obicall-<pkgver>-<pkgrel>-any.pkg.tar.zst` in that
 same directory.
 
@@ -186,10 +205,14 @@ the Python provider adapter.
 ## Known, disclosed limitations
 
 - **Single architecture**: UCRT64 only (see "Scope" above).
-- **`pacman -S mingw-w64-ucrt-x86_64-obicall` does not work yet.** That
-  only works once this package is in a repository pacman is configured to
-  use - either the official `msys2/MINGW-packages` (after review and
-  acceptance) or a self-hosted pacman repository. Until then, install the
+- **`pacman -S mingw-w64-ucrt-x86_64-obicall` needs a configured
+  repository.** It only works once this package is in a repository pacman
+  is configured to use - either the official `msys2/MINGW-packages` (after
+  review and acceptance; not submitted) or the project's own signed
+  repository `[obicall-ucrt64]`, which `publish-repos.yml` publishes from
+  each release once the one-time setup in
+  [RELEASING_LINUX.md](RELEASING_LINUX.md) is done (users then add it to
+  `/etc/pacman.conf` as shown in README.md). Until then, install the
   downloaded `.pkg.tar.zst` directly with `pacman -U`.
 - **`build_references.sh`'s packaging lint** (`makepkg-mingw`'s
   "Checking for packaging issues" step) prints `WARNING: Package contains
@@ -229,3 +252,10 @@ the Python provider adapter.
    either submit this PKGBUILD to `msys2/MINGW-packages` for review, or
    publish and configure your own signed pacman repository - a release
    asset alone does not make either happen automatically.
+
+From 0.1.2 on, steps 3-5 are automated: pushing the tag runs
+`.github/workflows/release.yml`, which pins this recipe (and the Arch Linux
+one) to the tag's archive with `packaging/pin-pkgbuild.sh`, builds and
+tests the package on a clean Windows runner, and attaches it with
+`SHA256SUMS`; `publish-repos.yml` then publishes it in `[obicall-ucrt64]`.
+See [RELEASING_LINUX.md](RELEASING_LINUX.md), "Releasing a version".

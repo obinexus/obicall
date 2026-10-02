@@ -11,6 +11,18 @@ target_include_directories(obicall_supervisor PUBLIC
 )
 target_link_libraries(obicall_supervisor PUBLIC Obicall::core obicall_osal obicall_procutil)
 
+# Where the Python adapter's ctypes loader finds the core library (see
+# supervisor.c): its real SONAME file name (obicall.so.0 / obicall.0.dylib
+# - the core target has PREFIX "", so never "libobicall.*"), next to the
+# binaries in a build tree, or at OBICALL_INSTALL_BIN_TO_LIBDIR (top-level
+# CMakeLists.txt) relative to the installed bin/. Windows keeps its DLL in
+# bin/ in both layouts and needs neither.
+if(NOT WIN32)
+    target_compile_definitions(obicall_supervisor PRIVATE
+        OBICALL_CORE_LIB_FILE_NAME="$<TARGET_SONAME_FILE_NAME:obicall_core>"
+        OBICALL_INSTALL_BIN_TO_LIBDIR="${OBICALL_INSTALL_BIN_TO_LIBDIR}")
+endif()
+
 # Dev convenience only: lets `obicall run`/`obicall demo` find the Python
 # worker script when run straight out of an uninstalled build/bin/, before
 # the install-relative path (bin/../share/obicall/python/obicall/...; see

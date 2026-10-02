@@ -220,6 +220,18 @@ guarded to GCC/Clang) and is exercised in `.github/workflows/linux.yml`,
 where Ubuntu's GCC does ship both. This is a genuine environment limitation,
 not a skipped step.
 
+**Later, on Linux (2026-10-02, Linux packaging work):** the same
+configuration, in a clean `ubuntu:24.04` container with GCC 13.3 (exactly
+what `linux.yml` runs), first exposed two problems: LeakSanitizer reported
+the supervisor's per-child `argv` copies as leaked (fixed:
+`supervisor_stop_all()` frees them), and the Python interpreter that two
+tests spawn aborted when ctypes-loading the ASan-instrumented core library
+(fixed for GCC builds: `tests/CMakeLists.txt` preloads `libasan.so` into
+those tests). After both fixes: **18/18 passed, twice**, with no ASan,
+UBSan, or LSan reports. With Clang the same two Python tests still fail
+(Clang links the ASan runtime statically into executables, so the preload
+does not apply); `linux.yml` uses GCC.
+
 ## Fuzzing
 
 **Real coverage-guided libFuzzer: not run in this environment** — same root
@@ -245,12 +257,14 @@ read as equivalent to a real libFuzzer corpus-driven run.
 
 ## What was not tested
 
-- **Linux, macOS builds.** No Linux or macOS host was available in this
-  session. `.github/workflows/linux.yml` and `macos.yml` are configured
-  (apt/brew toolchain install, the same `cmake`/`ctest`/`install` sequence
-  documented above, plus the same relocated-install smoke test) but have
-  never actually run. A cross-compile was not treated as a substitute for
-  this and was not attempted.
+- **macOS builds.** No macOS host has been available. `macos.yml` is
+  configured (brew toolchain install, the same `cmake`/`ctest`/`install`
+  sequence documented above, plus the same relocated-install smoke test).
+  Its CI runs before 0.1.2 failed to compile (missing `<time.h>`/`<stdio.h>`
+  includes, now added); nothing after that has been run on macOS.
+  *Linux* was not available in this original session either; it has since
+  been built and tested in clean Ubuntu, Debian, and Arch Linux containers -
+  see [RELEASING_LINUX.md](RELEASING_LINUX.md), "Validation record".
 - **Wrong-architecture rejection at the loader level.** The architecture
   filter in `obicall_manifest_rank_alternatives` is unit-tested directly
   (`tests/unit/test_manifest.c`), but there is no second-architecture build

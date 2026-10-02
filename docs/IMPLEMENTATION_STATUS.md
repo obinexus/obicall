@@ -114,7 +114,8 @@ commands and output).
 | Relocated-install smoke test | Implemented, real | See `docs/VALIDATION.md` — install tree copied to an unrelated temp directory, `obicall doctor --json` run from there, `"overall":"ok"` |
 | Windows import lib separate from DLL; core output name `obicall`, no `lib` prefix | Implemented | `src/core/CMakeLists.txt` (`OUTPUT_NAME obicall`, `PREFIX ""`) |
 | MSYS2 UCRT64 build, matching toolchain (not mixed) | Implemented, real | Built and tested in this environment via `mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,python}` — see `docs/VALIDATION.md` |
-| Linux / macOS builds | Configured, not executed here | `.github/workflows/linux.yml`, `macos.yml`; this session has no Linux/macOS host — see `docs/VALIDATION.md` "Not tested" |
+| Linux builds and packages | Implemented, real | Built and tested in clean Ubuntu 22.04/24.04/26.04, Debian 12/13, and Arch Linux containers; `.deb` and Arch packages, signed APT/pacman repositories - see `docs/RELEASING_LINUX.md` |
+| macOS builds | Configured, not executed | `.github/workflows/macos.yml`; no macOS host has been available - see `docs/VALIDATION.md` "Not tested" |
 | `obicall doctor/validate/run/status/replay/demo`, JSON on stdout, diagnostics on stderr, documented exit codes | Implemented | `src/cli/main.c`; every command exercised by `tests/CMakeLists.txt` CLI smoke tests |
 | `status` locates the running instance | Implemented | Runtime-dir `gate.port` + `run.token` files (`src/common/procutil.c`); documented in `docs/ABI.md` |
 | Demo starts/cleans up its own children, no separate terminals | Implemented, real | `src/cli/main.c::cmd_demo` (own `supervisor_t`, own teardown) |
@@ -144,7 +145,7 @@ All of these have a real, currently-passing automated test unless marked otherwi
 | Gate restart, corrupt persistence, consumer expiry when gate disappears | Implemented, real | `test_gate_restart`; `cli_demo_broker_failover` |
 | Equal-input replica disagreement, no arbitrary winner | Implemented (primitive); Not tested end-to-end | `obicall_gate_results_agree` exists and is unit-tested (`test_gate.c::test_results_agree_tolerance`); no end-to-end scenario currently feeds two brokers deliberately-diverging identical-input data to observe the gate's disagreement bookkeeping in a live run |
 | Worker replacement + replay using a compatible checkpoint | Partial | Process replacement and journal-level continuity are real and covered by the broker-failover demo's recovery phase; a literal provider-checkpoint transfer between two OS processes is not implemented — see below |
-| Sanitizers | Not run here | GCC on MSYS2 UCRT64 does not ship `libasan`/`libubsan` (linker: `cannot find -lasan`); `-DOBICALL_ENABLE_SANITIZERS=ON` is wired into the build for Linux/macOS CI (GCC/Clang there do ship them) but was not exercised in this environment |
+| Sanitizers | Run on Linux (GCC) | 18/18 under ASan/UBSan/LSan in an Ubuntu 24.04 container (the `linux.yml` configuration) - see `docs/VALIDATION.md` "Sanitizers"; not available in MSYS2 UCRT64 GCC (`cannot find -lasan`) |
 | Fuzzing | Implemented, not coverage-guided here | No Clang/libFuzzer available in this environment; `tests/fuzz/` builds a real `LLVMFuzzerTestOneInput` per target that runs unmodified under real libFuzzer where available, plus a standalone random-input driver that ran 100,000 iterations against each target here with no crash (`fuzz_wire_decode`, `fuzz_manifest_parse`) |
 | Latency/memory/drop/estimation-error/uncertainty-calibration measurement | Not implemented | No benchmarking harness exists; the brief's own instruction not to fabricate benchmark numbers is followed by simply not reporting any |
 

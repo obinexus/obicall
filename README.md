@@ -16,6 +16,91 @@ exactly what it does and does not survive, and
 requirement-by-requirement account of what's implemented, tested, or
 deliberately deferred.
 
+## Installing from package repositories
+
+Signed APT and pacman repositories are published to GitHub Pages at
+`https://obinexus.github.io/obicall/` by this repository's release
+workflows:
+
+| System | Install by name | Repository |
+|---|---|---|
+| Debian 12/13, Ubuntu 22.04/24.04/26.04 (amd64) | `sudo apt install obicall` | APT `stable main` |
+| Arch Linux (x86_64) | `sudo pacman -Syu obicall` | `[obicall]` |
+| Windows: MSYS2 UCRT64 | `pacman -S mingw-w64-ucrt-x86_64-obicall` | `[obicall-ucrt64]` |
+
+> **Status: not published yet.** The repositories go live with the first
+> release made after the maintainer's one-time setup (signing key, GitHub
+> Pages - see [docs/RELEASING_LINUX.md](docs/RELEASING_LINUX.md)); until
+> then, the commands in this section will not find anything at the
+> repository URLs. Meanwhile, install a downloaded package from
+> [Releases](https://github.com/obinexus/obicall/releases) by file name
+> (`sudo apt install ./obicall_*.deb`, `sudo pacman -U obicall-*.pkg.tar.zst`,
+> or `pacman -U mingw-w64-ucrt-x86_64-obicall-*.pkg.tar.zst`), or build from
+> source as in "Quick start".
+
+These repositories are not part of your distribution, so each needs a
+**one-time setup** that tells your package manager where they are and
+which key signs them. Before trusting the key, check that the fingerprint
+`gpg --show-keys` prints matches this one, published here on GitHub rather
+than only on the package site:
+
+**Signing key fingerprint:** `38B7825A2ABABB95626D45371272EE225B68CE42`
+(Ed25519, "Obicall package repository", expires 2029-10-01)
+
+### Debian and Ubuntu
+
+```bash
+sudo apt install curl gpg    # if not already installed
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://obinexus.github.io/obicall/obicall-archive-keyring.gpg \
+  | sudo tee /etc/apt/keyrings/obicall-archive-keyring.gpg > /dev/null
+gpg --show-keys /etc/apt/keyrings/obicall-archive-keyring.gpg   # compare the fingerprint
+sudo tee /etc/apt/sources.list.d/obicall.sources > /dev/null <<'EOF'
+Types: deb
+URIs: https://obinexus.github.io/obicall/apt
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/obicall-archive-keyring.gpg
+EOF
+sudo apt update
+sudo apt install obicall
+```
+
+### Arch Linux
+
+This is Arch Linux. For Windows, use the MSYS2 section below: it is a
+different system with a different package name.
+
+```bash
+curl -fsSLO https://obinexus.github.io/obicall/obicall-archive-keyring.asc
+gpg --show-keys obicall-archive-keyring.asc                     # compare the fingerprint
+sudo pacman-key --add obicall-archive-keyring.asc
+sudo pacman-key --lsign-key 38B7825A2ABABB95626D45371272EE225B68CE42
+printf '\n[obicall]\nSigLevel = Required DatabaseRequired\nServer = https://obinexus.github.io/obicall/arch/$arch\n' \
+  | sudo tee -a /etc/pacman.conf
+sudo pacman -Syu obicall
+```
+
+### Windows: MSYS2 UCRT64
+
+In the **MSYS2 UCRT64** shell (not PowerShell; MSYS2 has no `sudo`):
+
+```bash
+curl -fsSLO https://obinexus.github.io/obicall/obicall-archive-keyring.asc
+gpg --show-keys obicall-archive-keyring.asc                     # compare the fingerprint
+pacman-key --add obicall-archive-keyring.asc
+pacman-key --lsign-key 38B7825A2ABABB95626D45371272EE225B68CE42
+printf '\n[obicall-ucrt64]\nSigLevel = Required DatabaseRequired\nServer = https://obinexus.github.io/obicall/msys2/ucrt64\n' \
+  >> /etc/pacman.conf
+pacman -Syu
+pacman -S mingw-w64-ucrt-x86_64-obicall
+```
+
+Then, from any directory: `obicall doctor --json`, and
+`obicall demo --scenario broker-failover --config <prefix>/share/obicall/examples/position-fusion.json --json`
+(`<prefix>` is `/usr`, or `/ucrt64` in MSYS2).
+
 ## Quick start
 
 Prerequisites: a C11 compiler, CMake ≥ 3.20, and Python 3 (used as a real
@@ -223,11 +308,13 @@ Either is correct; they just produce artifacts under different directories
 (`build/` vs `build-msvc/`, in the example above). There's nothing to
 clean up or undo from seeing the warning.
 
-Linux and macOS are configured (`.github/workflows/linux.yml`, `macos.yml` —
-standard `apt`/`brew` toolchain install, the same `make`/`make test`/
-`make install` commands above, plus the same relocated-install check
-described below) but have not been run in this development environment,
-which had no Linux or macOS host available.
+Linux is built and tested too (`.github/workflows/linux.yml` and
+`linux-packages.yml`; locally, in clean Ubuntu, Debian, and Arch Linux
+containers - see [docs/RELEASING_LINUX.md](docs/RELEASING_LINUX.md)).
+macOS is configured (`.github/workflows/macos.yml` — `brew` toolchain
+install, the same `make`/`make test`/`make install` commands above, plus
+the same relocated-install check described below) but has not been run in
+any development environment used so far.
 See [docs/VALIDATION.md](docs/VALIDATION.md) for exactly what was and wasn't
 executed, on which platform.
 
@@ -285,10 +372,10 @@ Every claim below has a passing, currently-runnable test backing it —
   mechanism is independent journal replay — see
   [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for the
   distinction).
-- No sanitizer or coverage-guided-fuzzing run in *this* environment
-  (MSYS2 UCRT64 GCC has no `libasan`/`libubsan`/libFuzzer) — both are wired
-  into the build for a toolchain that has them; see
-  [docs/VALIDATION.md](docs/VALIDATION.md).
+- No coverage-guided fuzzing run yet (MSYS2 UCRT64 GCC has no libFuzzer,
+  and no Clang toolchain has been used); it is wired into the build for a
+  toolchain that has it. Sanitizers (ASan/UBSan) have been run on Linux
+  only, with GCC; see [docs/VALIDATION.md](docs/VALIDATION.md).
 - No benchmarking harness, so no latency-percentile/throughput/memory
   numbers are reported — the one latency number in this README is a single
   real measurement, labeled as exactly that.
@@ -318,8 +405,11 @@ tests/unit/           pure-logic tests, no subprocesses
 tests/integration/    real-subprocess tests (dynamic loading, IPC, restart)
 tests/fixtures/       a deliberately ABI-incompatible provider, for testing
 tests/fuzz/           LLVMFuzzerTestOneInput targets + a standalone driver
+packaging/            .deb (CPack), Arch Linux and MSYS2 PKGBUILDs, package
+                      checks and smoke test, signed APT/pacman repository
+                      tooling (packaging/repo/)
 docs/                 architecture, ABI, fault tolerance, DGT, validation,
-                      implementation status
+                      implementation status, releasing (MSYS2, Linux)
 ```
 
 ## Reference architectures

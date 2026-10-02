@@ -43,6 +43,8 @@ int supervisor_start(supervisor_t* sv, const char* config_path, const char* runt
  * command's loop. */
 void supervisor_monitor_tick(supervisor_t* sv);
 
+/* Stops every child and releases their spawn state. Terminal: the
+ * supervisor cannot restart children afterwards. */
 void supervisor_stop_all(supervisor_t* sv);
 
 /* Test/demo hook: forcibly kill a named child (e.g. "broker_A") so its
