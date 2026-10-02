@@ -230,7 +230,8 @@ Nothing here can be done by the workflows themselves.
    The release is done when both are green: the second one's verification
    jobs are the proof that `apt install obicall`, `pacman -Syu obicall`, and
    `pacman -S mingw-w64-ucrt-x86_64-obicall` work from the live site.
-   If `workflow_run` did not start the publish run, start it by hand:
+   Publishing starts automatically only after a tag push's Release run; if it
+   did not start (or after a manual rerun of Release), start it by hand:
    `gh workflow run publish-repos.yml -f tag=vX.Y.Z`.
 4. Commit the pinned recipes back to `main` (as was done for v0.1.1 in
    commit `f04cf98`): download `PKGBUILD-archlinux` and `PKGBUILD-msys2`

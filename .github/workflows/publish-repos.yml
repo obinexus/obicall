@@ -40,7 +40,11 @@ defaults:
 jobs:
   prepare:
     name: Fetch and verify the release's packages
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Automatically only after a tag push's successful Release run; after a
+    # manual Release rerun, run this workflow by hand with the tag.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -83,6 +87,11 @@ jobs:
             --pattern 'obicall_*.deb' --pattern 'obicall-*-x86_64.pkg.tar.zst' \
             --pattern 'mingw-w64-ucrt-x86_64-obicall-*.pkg.tar.zst'
           sha256sum --check --ignore-missing --strict SHA256SUMS
+          # --ignore-missing would also pass a package SHA256SUMS does not list.
+          for f in obicall_*.deb obicall-*-x86_64.pkg.tar.zst mingw-w64-ucrt-x86_64-obicall-*.pkg.tar.zst; do
+            awk -v f="*$f" '$2 == f { found = 1 } END { exit !found }' SHA256SUMS \
+              || { echo "::error::$f is not listed in SHA256SUMS"; exit 1; }
+          done
           mkdir deb arch msys2
           mv obicall_*.deb deb/
           mv obicall-*-x86_64.pkg.tar.zst arch/
@@ -98,7 +107,10 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: release-packages
-          path: pkgs/*/
+          path: |
+            pkgs/deb/
+            pkgs/arch/
+            pkgs/msys2/
           if-no-files-found: error
 
   apt:

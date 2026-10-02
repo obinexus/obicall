@@ -3,13 +3,15 @@ name: Release
 # Pushing a vX.Y.Z tag builds every package from that tag's published
 # source archive (pinned by checksum), runs the test suite, install-tests
 # each package on clean systems, then attaches the packages, the archive,
-# the pinned recipes, and SHA256SUMS to the GitHub release (creating it if
-# needed). Assets already on a release are never replaced, and tags are
-# never moved. A successful run triggers publish-repos.yml, which puts the
-# packages into the signed APT and pacman repositories.
+# the pinned recipes, and SHA256SUMS to the GitHub release (creating it as
+# a draft, and publishing it once every asset is attached). A release that
+# already has assets is never altered, and tags are never moved. A
+# successful run triggers publish-repos.yml, which puts the packages into
+# the signed APT and pacman repositories.
 #
 # workflow_dispatch reruns this for an existing tag (e.g. after a runner
-# outage); it uploads only what the release does not already have.
+# outage, or with a fixed workflow from main). It fills only a release
+# with no assets yet; otherwise it stops rather than replace anything.
 
 on:
   push:
@@ -117,7 +119,15 @@ jobs:
       - name: Create the release, or add to the existing one
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            # No --clobber: an asset that is already published is never replaced.
+            # A rebuild is not byte-identical, so mixing its files with ones
+            # already attached would break SHA256SUMS: only an empty release
+            # (e.g. one created by hand before the tag was pushed) is filled.
+            existing=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+            if [ -n "$existing" ]; then
+              echo "::error::release $TAG already has assets; a published release is never altered:"
+              echo "$existing"
+              exit 1
+            fi
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/*
           else
             prerelease=()
@@ -134,7 +144,18 @@ jobs:
           To install by name with apt or pacman, see
           [Installing from package repositories](https://github.com/$GITHUB_REPOSITORY#installing-from-package-repositories).
           EOF
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            # Created as a draft and published only once every asset is
+            # attached, so a failed upload never leaves a partial release.
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
               --title "Obicall $TAG" --notes-file notes.md --generate-notes "${prerelease[@]}" dist/*
           fi
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
+          attached=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
+          built=$(cd dist && printf '%s\n' * | sort)
+          if [ "$attached" != "$built" ]; then
+            echo "::error::the release's assets differ from the built ones"
+            diff <(echo "$built") <(echo "$attached") || true
+            exit 1
+          fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,isDraft,isPrerelease,assets \
+            --jq '"\(.url) draft=\(.isDraft) prerelease=\(.isPrerelease)", (.assets[] | "  \(.name) \(.size)")'
